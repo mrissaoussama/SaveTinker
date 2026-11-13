@@ -1,0 +1,12 @@
+{
+  "id": "examples.sample-game",
+  "name": "Sample Game Editor",
+  "description": "Shows the file layout and checksum handling an editor needs.",
+  "version": "1.0.0",
+  "api_version": 1,
+  "authors": ["SaveTinker"],
+  "games": [
+    {"platform": "switch", "title_id": "0100000000001000", "name": "Sample Game", "versions": [">=1.0.0"]},
+    {"platform": "3ds", "title_id": "0004000000001000", "name": "Sample Game"}
+  ]
+}
