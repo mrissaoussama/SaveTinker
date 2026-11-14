@@ -14,7 +14,6 @@ class Autopilot {
 public:
     static std::optional<Autopilot> load(const std::filesystem::path& script, std::filesystem::path outputDir);
 
-    // Call before ImGui::NewFrame. Returns false once the script asks to quit.
     bool beforeFrame();
     // Call after rendering, before swapping buffers. Reads the OpenGL framebuffer.
     void afterRender(int width, int height);
@@ -34,7 +33,6 @@ private:
     std::size_t index_ = 0;
     int waitFrames_ = 0;
     int releaseKey_ = 0;
-    // Pointer path for "tap x y" and "drag x y dx dy": positions to visit, then release.
     std::vector<std::pair<float, float>> touchPath_;
     std::size_t touchStep_ = 0;
     std::string pendingShot_;

@@ -84,7 +84,6 @@ bool wasDragged() {
     return ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > limit * limit;
 }
 
-// Dragging with a finger (or the mouse) scrolls the list under it instead of pressing rows.
 void dragScroll() {
     auto& io = ImGui::GetIO();
     static ImGuiWindow* target = nullptr;

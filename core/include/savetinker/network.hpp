@@ -27,7 +27,6 @@ public:
                                                          const ProgressCallback& progress = {}) = 0;
 };
 
-// GET that fails on non-2xx statuses.
 std::expected<Bytes, std::string> download(HttpClient& client, const std::string& url, std::uint64_t maxBytes,
                                            const ProgressCallback& progress = {});
 

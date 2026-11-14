@@ -44,7 +44,6 @@ struct CodeFinding {
     std::string detail;
 };
 
-// Lists save writes, required modules and data files used by a script.
 std::vector<CodeFinding> summarizeScript(std::string_view code);
 
 }

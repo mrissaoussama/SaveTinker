@@ -69,7 +69,6 @@ struct UiNode {
     int changeRef = 0;
 
     bool editable() const { return !readOnly && bindingRef != 0; }
-    // Index of the option matching the current value, if any.
     std::optional<std::size_t> selectedOption() const;
     bool flagSet(std::size_t optionIndex) const;
     bool toggleState() const;

@@ -41,7 +41,6 @@ const st::RepoEditorEntry* findRepoEditor(const st::RepoSource* repo, const std:
     return found == repo->index.editors.end() ? nullptr : &*found;
 }
 
-// Downloads a repo editor, then shows the inspector with an install button.
 void downloadAndInspect(App& app, const std::string& repoUrl, const st::RepoEditorEntry& entry) {
     app.runTask(trf("Downloading {}", entry.name), [&app, repoUrl, entry](Progress& progress) -> std::function<void(App&)> {
         auto bytes = app.repoManager().downloadEditor(entry, [&progress](std::uint64_t done, std::uint64_t total) {

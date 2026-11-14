@@ -33,7 +33,6 @@ struct TitleInfo {
     std::string displayVersion;
     std::uint32_t version = 0;
     Bytes icon;
-    // Installed add-on content (DLC) ids.
     std::vector<std::string> addOns;
 };
 
@@ -44,7 +43,6 @@ struct SaveInfo {
     std::uint64_t size = 0;
     std::uint64_t journalSize = 0;
     std::uint64_t saveDataId = 0;
-    // Loose save files (emulators, dumps) are opened from here.
     std::filesystem::path path;
 
     std::string slotName() const;

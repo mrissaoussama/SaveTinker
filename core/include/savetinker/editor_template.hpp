@@ -38,12 +38,10 @@ inline constexpr std::string_view kTemplateTypes[] = {"u8",  "u16", "u32", "u64"
                                                       "s64", "f32", "f64", "bit", "utf8", "utf16"};
 
 bool isTemplateType(std::string_view type);
-// Bytes covered by the field, at least one.
 std::size_t templateFieldSize(const TemplateField& field);
 std::string validateTemplateField(const TemplateField& field);
 
 std::string generateEditorScript(const EditorTemplate& draft);
-// manifest.json and main.lua, ready for EditorStore::install or a folder.
 std::vector<PackageFile> generateEditorFiles(const EditorTemplate& draft);
 
 std::string templateToJson(const EditorTemplate& draft);

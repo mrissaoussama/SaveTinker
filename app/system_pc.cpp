@@ -52,7 +52,6 @@ private:
 
 namespace {
 
-// Builds a console folder from the bundled examples, keeping saves that already exist.
 void prepareDemo(const fs::path& console) {
     const fs::path examples = SAVETINKER_EXAMPLES_DIR;
     std::error_code error;

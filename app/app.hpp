@@ -91,7 +91,6 @@ public:
 
     void promptText(TextRequest request, std::function<void(App&, std::string)> onDone);
     void confirm(std::string title, std::string message, std::string confirmLabel, std::function<void(App&)> onConfirm);
-    // Several actions plus Cancel; the first one is highlighted.
     void choose(std::string title, std::string message, std::vector<std::pair<std::string, std::function<void(App&)>>> choices);
     void showMessage(std::string title, std::string message);
     void toast(std::string text, bool error = false);
@@ -105,11 +104,8 @@ public:
     bool modalOpen() const;
     float scale() const { return scale_; }
     std::string language() const;
-    // Reloads UI translations after the language setting changes.
     void applyLanguage();
-    // Loose save folders from the settings, or the console defaults.
     void applySaveFolders();
-    // Left end of the footer line, where screens can show context help.
     ImVec2 footerTextPosition() const { return footerLeft_; }
 
 private:

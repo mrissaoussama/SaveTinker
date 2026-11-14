@@ -21,7 +21,6 @@ struct Texture {
 class Textures {
 public:
     ~Textures();
-    // Decodes and uploads an image once per key.
     Texture get(const std::string& key, st::ByteView encoded);
     void clear();
 

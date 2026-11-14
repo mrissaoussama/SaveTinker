@@ -65,7 +65,6 @@ public:
     std::optional<std::string> undoLabel() const;
     std::optional<std::string> redoLabel() const;
     const std::vector<Transaction>& history() const { return history_; }
-    // Labels of the steps currently applied, oldest first.
     std::vector<std::string> appliedLabels() const;
 
     bool isDirty() const;

@@ -43,7 +43,6 @@ public:
     std::expected<void, std::string> verify(const BackupRecord& record) const;
     std::expected<void, std::string> restore(const BackupRecord& record, SaveMount& mount) const;
     bool remove(const BackupRecord& record) const;
-    // Deletes the oldest backups of a slot until at most `keep` remain.
     std::size_t prune(const std::string& titleId, const std::string& slot, std::size_t keep) const;
 
 private:

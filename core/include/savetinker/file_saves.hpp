@@ -10,14 +10,12 @@
 
 namespace st {
 
-// Game identity read from a ROM header next to a save file.
 struct RomIdentity {
     std::string platform;
     std::string gameCode;
     std::string title;
 };
 
-// GBA (.gba) and DS (.nds) headers. Nothing when the file is neither.
 std::optional<RomIdentity> readRomIdentity(const std::filesystem::path& rom);
 
 // Title id for a cartridge game: eight zeros, then the four-letter game code as hex.

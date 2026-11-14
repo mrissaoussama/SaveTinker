@@ -32,7 +32,6 @@ std::string trf(std::string_view text, const Args&... args) {
 
 // Built-in translation first, then <data>/lang/<language>.json for fixes and new languages.
 void loadTranslations(const std::string& language, const std::filesystem::path& dataRoot);
-// Language codes with a built-in translation, English included.
 std::vector<std::string> builtinLanguages();
 
 }

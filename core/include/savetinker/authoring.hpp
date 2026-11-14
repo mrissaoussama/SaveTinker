@@ -42,7 +42,6 @@ struct UiDumpOptions {
     int maxDepth = 8;
 };
 
-// Text outline of every page, used by the command line tool and tests.
 std::expected<std::string, std::string> dumpUi(EditorSession& session, const UiDumpOptions& options = {});
 
 }

@@ -25,19 +25,16 @@ struct ScriptContext {
     std::string gameVersion;
     EditorManifest editor;
     std::string language = "en";
-    // Installed add-on content (DLC) ids for the game, as 16 hex digits.
     std::vector<std::string> addOns;
     // "account", "device", "extdata", "ds-card"...
     std::string saveKind;
 };
 
-// Returns the source of a module ("main", "lib.crc") or nothing if it does not exist.
 using ModuleLoader = std::function<std::optional<std::string>(std::string_view moduleName)>;
 
 // Looks in the editor folder first, then in the shared library folder.
 ModuleLoader directoryModuleLoader(std::filesystem::path editorDir, std::filesystem::path libraryDir = {});
 
-// Returns the bytes of a data file shipped with the editor ("labels/items.json").
 using DataLoader = std::function<std::optional<std::string>(std::string_view relativePath)>;
 DataLoader directoryDataLoader(std::filesystem::path editorDir);
 
@@ -61,7 +58,6 @@ public:
 
     std::expected<void, std::string> loadEntry();
     std::expected<void, std::string> run(std::string_view code, std::string_view chunkName = "chunk");
-    // Runs code and returns the first result converted with tostring().
     std::expected<std::string, std::string> evaluate(std::string_view code);
 
     void setDataLoader(DataLoader loader);

@@ -43,7 +43,6 @@ struct MsbtMessage {
     std::string label;
     // UTF-8 with the original control tags (0x0E group/type/size records) converted from UTF-16 if needed.
     std::string raw;
-    // Text with control tags removed.
     std::string text;
 };
 

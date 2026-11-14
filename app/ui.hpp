@@ -40,11 +40,9 @@ void restoreFocus(ImGuiID rowId);
 // Rows that react to left/right call this every frame. It returns -1, 0 or 1. Focus is taken from the
 // previous frame because a left/right press makes navigation briefly move focus during that frame.
 int horizontalInput(ImGuiID rowId, bool focused);
-// Call right after ImGui::NewFrame.
 void beginFrame();
 // True while or right after the pointer moved far enough to count as a drag rather than a tap.
 bool wasDragged();
-// Call once per frame after the screen is drawn.
 void dragScroll();
 // Moving past the last row lands on the first and the other way round. Call before ending the window.
 void wrapNavigation();
@@ -56,7 +54,6 @@ struct RowResult {
     bool hovered = false;
 };
 
-// Full-width list row with a label on the left and an optional value on the right.
 RowResult row(const char* id, const std::string& label, const std::string& value = {}, ImU32 valueColor = color::TextDim,
               bool selected = false, float height = 0.0f);
 
@@ -66,7 +63,6 @@ void sectionTitle(const std::string& text);
 void dimText(const std::string& text);
 void wrappedText(const std::string& text, ImU32 color = color::Text);
 void emptyState(const std::string& title, const std::string& detail = {});
-// Draws an image, or a tile with the initials of `name` when there is none.
 void iconTile(const Texture& texture, const std::string& name, float size);
 // Pixel-based QR code drawing.
 void qrCode(const std::string& text, float size);
