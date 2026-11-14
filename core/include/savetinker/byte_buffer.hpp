@@ -90,6 +90,14 @@ private:
     Bytes bytes_;
 };
 
+struct ByteRange {
+    std::size_t offset = 0;
+    std::size_t length = 0;
+};
+
+// Ranges where two buffers differ; extra bytes in the longer one count as one range.
+std::vector<ByteRange> diffBytes(ByteView a, ByteView b);
+
 std::u16string utf8ToUtf16(std::string_view utf8);
 std::string utf16ToUtf8(std::u16string_view utf16);
 

@@ -226,15 +226,25 @@ TextEncoding optEncoding(lua_State* L, int index, Endian fileEndian) {
     return TextEncoding::Utf8;
 }
 
+std::string readText(const ByteBuffer& buffer, std::size_t offset, std::size_t length, TextEncoding encoding) {
+    if (encoding == TextEncoding::Utf8) return buffer.readUtf8(offset, length);
+    return buffer.readUtf16(offset, length, encoding == TextEncoding::Utf16Be ? Endian::Big : Endian::Little);
+}
+
+void writeText(Document& document, const std::string& file, std::size_t offset, std::size_t length,
+               std::string_view text, TextEncoding encoding) {
+    const std::size_t byteLength = encoding == TextEncoding::Utf8 ? length : length * 2;
+    ByteBuffer scratch{Bytes(byteLength)};
+    if (encoding == TextEncoding::Utf8) scratch.writeUtf8(0, text, length);
+    else scratch.writeUtf16(0, text, length, encoding == TextEncoding::Utf16Be ? Endian::Big : Endian::Little);
+    document.write(file, offset, scratch.view());
+}
+
 int fileStr(lua_State* L) {
     auto& file = checkFile(L, 1);
     const auto offset = checkOffset(L, 2);
     const auto length = checkOffset(L, 3);
-    const auto encoding = optEncoding(L, 4, file.endian);
-    const auto& buffer = bufferOf(file);
-    const std::string text = encoding == TextEncoding::Utf8
-                                 ? buffer.readUtf8(offset, length)
-                                 : buffer.readUtf16(offset, length, encoding == TextEncoding::Utf16Be ? Endian::Big : Endian::Little);
+    const auto text = readText(bufferOf(file), offset, length, optEncoding(L, 4, file.endian));
     lua_pushlstring(L, text.data(), text.size());
     return 1;
 }
@@ -244,12 +254,108 @@ int fileSetStr(lua_State* L) {
     const auto offset = checkOffset(L, 2);
     const auto length = checkOffset(L, 3);
     const auto text = checkString(L, 4);
-    const auto encoding = optEncoding(L, 5, file.endian);
-    const std::size_t byteLength = encoding == TextEncoding::Utf8 ? length : length * 2;
-    ByteBuffer scratch{Bytes(byteLength)};
-    if (encoding == TextEncoding::Utf8) scratch.writeUtf8(0, text, length);
-    else scratch.writeUtf16(0, text, length, encoding == TextEncoding::Utf16Be ? Endian::Big : Endian::Little);
-    file.document->write(file.name, offset, scratch.view());
+    writeText(*file.document, file.name, offset, length, text, optEncoding(L, 5, file.endian));
+    return 0;
+}
+
+constexpr const char* kBindingType = "SaveTinker.Binding";
+
+struct BindingRef {
+    enum class Shape { Number, Bit, Text };
+    Document* document;
+    std::string file;
+    std::size_t offset;
+    Shape shape;
+    FieldKind kind = FieldKind::U8;
+    Endian endian = Endian::Little;
+    unsigned bit = 0;
+    std::size_t length = 0;
+    TextEncoding encoding = TextEncoding::Utf8;
+};
+
+BindingRef& checkBinding(lua_State* L, int index) {
+    return *static_cast<BindingRef*>(luaL_checkudata(L, index, kBindingType));
+}
+
+void pushBinding(lua_State* L, BindingRef binding) {
+    if (!binding.document->hasFile(binding.file)) luaL_error(L, "save has no file named '%s'", binding.file.c_str());
+    void* memory = lua_newuserdatauv(L, sizeof(BindingRef), 0);
+    new (memory) BindingRef(std::move(binding));
+    luaL_setmetatable(L, kBindingType);
+}
+
+int fileField(lua_State* L) {
+    auto& file = checkFile(L, 1);
+    BindingRef binding{file.document, file.name, checkOffset(L, 2), BindingRef::Shape::Number};
+    binding.kind = checkFieldKind(L, 3);
+    binding.endian = optEndian(L, 4, file.endian);
+    pushBinding(L, std::move(binding));
+    return 1;
+}
+
+int fileFlag(lua_State* L) {
+    auto& file = checkFile(L, 1);
+    BindingRef binding{file.document, file.name, checkOffset(L, 2), BindingRef::Shape::Bit};
+    const auto bit = luaL_checkinteger(L, 3);
+    luaL_argcheck(L, bit >= 0 && bit <= 7, 3, "bit must be 0-7");
+    binding.bit = static_cast<unsigned>(bit);
+    pushBinding(L, std::move(binding));
+    return 1;
+}
+
+int fileText(lua_State* L) {
+    auto& file = checkFile(L, 1);
+    BindingRef binding{file.document, file.name, checkOffset(L, 2), BindingRef::Shape::Text};
+    binding.length = checkOffset(L, 3);
+    binding.encoding = optEncoding(L, 4, file.endian);
+    pushBinding(L, std::move(binding));
+    return 1;
+}
+
+int bindingGet(lua_State* L) {
+    auto& binding = checkBinding(L, 1);
+    const auto& buffer = binding.document->file(binding.file);
+    switch (binding.shape) {
+    case BindingRef::Shape::Number: pushField(L, buffer, binding.offset, binding.kind, binding.endian); break;
+    case BindingRef::Shape::Bit: lua_pushboolean(L, buffer.readBit(binding.offset, binding.bit)); break;
+    case BindingRef::Shape::Text: {
+        const auto text = readText(buffer, binding.offset, binding.length, binding.encoding);
+        lua_pushlstring(L, text.data(), text.size());
+        break;
+    }
+    }
+    return 1;
+}
+
+int bindingSet(lua_State* L) {
+    auto& binding = checkBinding(L, 1);
+    switch (binding.shape) {
+    case BindingRef::Shape::Number: {
+        FileRef file{binding.document, binding.file, binding.endian};
+        writeField(L, file, binding.offset, binding.kind, 2, binding.endian);
+        break;
+    }
+    case BindingRef::Shape::Bit: {
+        ByteBuffer scratch(binding.document->file(binding.file).readBytes(binding.offset, 1));
+        scratch.writeBit(0, binding.bit, lua_toboolean(L, 2) != 0);
+        binding.document->write(binding.file, binding.offset, scratch.view());
+        break;
+    }
+    case BindingRef::Shape::Text:
+        writeText(*binding.document, binding.file, binding.offset, binding.length, checkString(L, 2), binding.encoding);
+        break;
+    }
+    return 0;
+}
+
+int bindingToString(lua_State* L) {
+    auto& binding = checkBinding(L, 1);
+    lua_pushfstring(L, "Binding(%s@%I)", binding.file.c_str(), static_cast<lua_Integer>(binding.offset));
+    return 1;
+}
+
+int bindingCollect(lua_State* L) {
+    checkBinding(L, 1).~BindingRef();
     return 0;
 }
 
@@ -332,6 +438,9 @@ void registerSaveTypes(lua_State* L) {
         {"str", guarded<fileStr>},
         {"setStr", guarded<fileSetStr>},
         {"find", guarded<fileFind>},
+        {"field", guarded<fileField>},
+        {"flag", guarded<fileFlag>},
+        {"text", guarded<fileText>},
         {nullptr, nullptr},
     };
     static const luaL_Reg fileMeta[] = {
@@ -349,6 +458,46 @@ void registerSaveTypes(lua_State* L) {
     };
     static const luaL_Reg saveMeta[] = {{nullptr, nullptr}};
     registerType(L, kSaveType, saveMethods, saveMeta);
+
+    static const luaL_Reg bindingMethods[] = {
+        {"get", guarded<bindingGet>},
+        {"set", guarded<bindingSet>},
+        {nullptr, nullptr},
+    };
+    static const luaL_Reg bindingMeta[] = {
+        {"__gc", bindingCollect},
+        {"__tostring", bindingToString},
+        {nullptr, nullptr},
+    };
+    registerType(L, kBindingType, bindingMethods, bindingMeta);
+}
+
+std::optional<FieldBindingInfo> fieldBindingInfo(lua_State* L, int index) {
+    auto* binding = static_cast<BindingRef*>(luaL_testudata(L, index, kBindingType));
+    if (!binding) return std::nullopt;
+    FieldBindingInfo info;
+    switch (binding->shape) {
+    case BindingRef::Shape::Bit: info.type = FieldBindingInfo::Type::Bool; break;
+    case BindingRef::Shape::Text:
+        info.type = FieldBindingInfo::Type::Text;
+        info.maxLength = binding->length;
+        break;
+    case BindingRef::Shape::Number: {
+        const bool isFloat = binding->kind == FieldKind::F32 || binding->kind == FieldKind::F64;
+        info.type = isFloat ? FieldBindingInfo::Type::Float : FieldBindingInfo::Type::Integer;
+        switch (binding->kind) {
+        case FieldKind::U8: info.min = 0; info.max = 0xFF; break;
+        case FieldKind::U16: info.min = 0; info.max = 0xFFFF; break;
+        case FieldKind::U32: info.min = 0; info.max = 0xFFFFFFFFu; break;
+        case FieldKind::S8: info.min = -128; info.max = 127; break;
+        case FieldKind::S16: info.min = -32768; info.max = 32767; break;
+        case FieldKind::S32: info.min = -2147483648.0; info.max = 2147483647.0; break;
+        default: break;
+        }
+        break;
+    }
+    }
+    return info;
 }
 
 void pushSave(lua_State* L, Document& document) {

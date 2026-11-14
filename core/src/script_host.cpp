@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -46,10 +47,50 @@ ModuleLoader directoryModuleLoader(fs::path editorDir, fs::path libraryDir) {
     };
 }
 
+bool isSafeRelativePath(std::string_view path) {
+    if (path.empty() || path.front() == '/' || path.find('\\') != std::string_view::npos || path.find(':') != std::string_view::npos)
+        return false;
+    const fs::path normalized = fs::path(path).lexically_normal();
+    return !normalized.empty() && *normalized.begin() != "..";
+}
+
+DataLoader directoryDataLoader(fs::path editorDir) {
+    return [editorDir = std::move(editorDir)](std::string_view path) -> std::optional<std::string> {
+        if (!isSafeRelativePath(path)) return std::nullopt;
+        return readTextFile(editorDir / fs::path(path));
+    };
+}
+
+namespace {
+
+// Helpers that are easier to express in Lua than through the C API.
+constexpr const char* kPrelude = R"lua(
+function st.bind(get, set)
+    return {
+        get = function() return get() end,
+        set = function(_, value) set(value) end,
+    }
+end
+
+function st.labels(path)
+    local dir, file = path:match("^(.*)/([^/]+)$")
+    local text = dir and st.data(dir .. "/" .. st.lang .. "/" .. file, true)
+    local raw = st.json.decode(text or st.data(path))
+    local labels = {}
+    for key, value in pairs(raw) do
+        labels[math.tointeger(tonumber(key)) or key] = value
+    end
+    return labels
+end
+)lua";
+
+}
+
 struct ScriptHost::Impl {
     Document& document;
     ScriptContext context;
     ModuleLoader loader;
+    DataLoader dataLoader;
     ScriptLimits limits;
     lua_State* L = nullptr;
     std::size_t memoryUsed = 0;
@@ -140,6 +181,20 @@ struct ScriptHost::Impl {
         return 1;
     }
 
+    static int data(lua_State* L) {
+        const std::string path(lua::checkString(L, 1));
+        const bool optional = lua_toboolean(L, 2) != 0;
+        auto& self = from(L);
+        std::optional<std::string> content;
+        if (self.dataLoader) content = self.dataLoader(path);
+        if (!content) {
+            if (optional) return 0;
+            return luaL_error(L, "data file '%s' not found", path.c_str());
+        }
+        lua_pushlstring(L, content->data(), content->size());
+        return 1;
+    }
+
     static int transaction(lua_State* L) {
         const std::string label(lua::checkString(L, 1));
         luaL_checktype(L, 2, LUA_TFUNCTION);
@@ -210,6 +265,10 @@ struct ScriptHost::Impl {
         setStringField("version", context.editor.version);
         lua_setfield(L, -2, "editor");
 
+        setStringField("lang", context.language);
+        lua_pushcfunction(L, lua::guarded<data>);
+        lua_setfield(L, -2, "data");
+
         lua::pushSave(L, document);
         lua_setfield(L, -2, "save");
 
@@ -222,6 +281,9 @@ struct ScriptHost::Impl {
 
         lua::registerUtilities(L, -1);
         lua_setglobal(L, "st");
+
+        if (luaL_loadbufferx(L, kPrelude, std::strlen(kPrelude), "=prelude", "t") != LUA_OK || lua_pcall(L, 0, 0, 0) != LUA_OK)
+            throw std::runtime_error(std::string("prelude failed: ") + lua_tostring(L, -1));
     }
 
     // Expects the function and its arguments on the stack.
@@ -285,6 +347,13 @@ std::expected<void, std::string> ScriptHost::loadEntry() {
     if (!code) return std::unexpected("entry script '" + impl_->context.editor.entry + "' not found");
     if (auto loaded = impl_->load(*code, "@" + impl_->context.editor.entry); !loaded) return loaded;
     return impl_->protectedCall(0, 0);
+}
+
+void ScriptHost::setDataLoader(DataLoader loader) { impl_->dataLoader = std::move(loader); }
+Document& ScriptHost::document() { return impl_->document; }
+
+std::expected<void, std::string> ScriptHost::call(int argumentCount, int resultCount) {
+    return impl_->protectedCall(argumentCount, resultCount);
 }
 
 bool ScriptHost::hasFunction(const char* name) {

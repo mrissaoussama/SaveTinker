@@ -72,6 +72,29 @@ std::optional<std::size_t> ByteBuffer::find(ByteView pattern, std::size_t from) 
     return static_cast<std::size_t>(match - bytes_.begin());
 }
 
+std::vector<ByteRange> diffBytes(ByteView a, ByteView b) {
+    std::vector<ByteRange> ranges;
+    const std::size_t common = std::min(a.size(), b.size());
+    std::size_t i = 0;
+    while (i < common) {
+        if (a[i] == b[i]) {
+            ++i;
+            continue;
+        }
+        const std::size_t start = i;
+        while (i < common && a[i] != b[i]) ++i;
+        ranges.push_back({start, i - start});
+    }
+    if (a.size() != b.size()) {
+        const std::size_t longer = std::max(a.size(), b.size());
+        if (!ranges.empty() && ranges.back().offset + ranges.back().length == common)
+            ranges.back().length = longer - ranges.back().offset;
+        else
+            ranges.push_back({common, longer - common});
+    }
+    return ranges;
+}
+
 std::u16string utf8ToUtf16(std::string_view utf8) {
     std::u16string out;
     std::size_t i = 0;

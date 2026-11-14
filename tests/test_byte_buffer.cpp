@@ -75,3 +75,15 @@ TEST_CASE("finds byte patterns") {
     CHECK(buffer.find(pattern, 2) == 4u);
     CHECK_FALSE(buffer.find(pattern, 5).has_value());
 }
+
+TEST_CASE("diffBytes finds changed ranges and size changes") {
+    const Bytes a{1, 2, 3, 4, 5};
+    const Bytes b{1, 9, 9, 4, 5, 6, 7};
+    const auto ranges = st::diffBytes(a, b);
+    REQUIRE(ranges.size() == 2);
+    CHECK(ranges[0].offset == 1);
+    CHECK(ranges[0].length == 2);
+    CHECK(ranges[1].offset == 5);
+    CHECK(ranges[1].length == 2);
+    CHECK(st::diffBytes(a, a).empty());
+}

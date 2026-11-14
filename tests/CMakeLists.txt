@@ -3,9 +3,13 @@ add_executable(savetinker_tests
     test_backup.cpp
     test_byte_buffer.cpp
     test_checksum.cpp
+    test_code_inspect.cpp
     test_document.cpp
+    test_editor_session.cpp
+    test_editor_store.cpp
     test_example_editor.cpp
     test_manifest.cpp
+    test_network.cpp
     test_pc_platform.cpp
     test_repository.cpp
     test_script_host.cpp

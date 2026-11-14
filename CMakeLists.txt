@@ -19,6 +19,7 @@ cmake_dependent_option(SAVETINKER_BUILD_TESTS "Build unit tests" ON "NOT NINTEND
 add_subdirectory(third_party)
 add_subdirectory(core)
 add_subdirectory(platform)
+add_subdirectory(net)
 
 if(NINTENDO_SWITCH)
     add_subdirectory(app/switch)

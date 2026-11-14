@@ -2,6 +2,7 @@
 
 #include <climits>
 #include <exception>
+#include <optional>
 #include <string_view>
 
 #include <lauxlib.h>
@@ -43,8 +44,18 @@ inline std::size_t checkOffset(lua_State* L, int index) {
     return static_cast<std::size_t>(value);
 }
 
+struct FieldBindingInfo {
+    enum class Type { Integer, Float, Bool, Text };
+    Type type = Type::Integer;
+    std::optional<double> min;
+    std::optional<double> max;
+    std::size_t maxLength = 0;
+};
+
 void pushSave(lua_State* L, Document& document);
 void registerSaveTypes(lua_State* L);
 void registerUtilities(lua_State* L, int stTableIndex);
+// Describes a binding made by file:field/flag/text, or nothing for other values.
+std::optional<FieldBindingInfo> fieldBindingInfo(lua_State* L, int index);
 
 }

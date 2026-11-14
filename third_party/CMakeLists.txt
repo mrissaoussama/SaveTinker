@@ -12,3 +12,23 @@ target_include_directories(nlohmann_json SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE
 
 add_library(doctest INTERFACE)
 target_include_directories(doctest SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/doctest)
+
+add_library(miniz STATIC miniz/miniz.c)
+target_include_directories(miniz SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/miniz)
+target_compile_options(miniz PRIVATE -w)
+
+add_library(qrcodegen STATIC qrcodegen/qrcodegen.cpp)
+target_include_directories(qrcodegen SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/qrcodegen)
+target_compile_options(qrcodegen PRIVATE -w)
+
+add_library(stb INTERFACE)
+target_include_directories(stb SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+
+add_library(imgui STATIC
+    imgui/imgui.cpp
+    imgui/imgui_draw.cpp
+    imgui/imgui_tables.cpp
+    imgui/imgui_widgets.cpp
+)
+target_include_directories(imgui SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/imgui ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends)
+target_compile_options(imgui PRIVATE -w)
