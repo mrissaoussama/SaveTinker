@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "savetinker/byte_buffer.hpp"
 #include "savetinker/script_host.hpp"
 
 namespace st {
@@ -32,6 +33,7 @@ enum class WidgetKind {
     Note,
     Warning,
     Separator,
+    Image,
 };
 
 struct UiOption {
@@ -63,6 +65,7 @@ struct UiNode {
     UiValue onValue = true;
     UiValue offValue = false;
     std::size_t maxLength = 0;
+    Bytes image;
     std::string pageId;
     int bindingRef = 0;
     int actionRef = 0;
@@ -85,7 +88,6 @@ struct Breadcrumb {
     std::string title;
 };
 
-// Runs an editor's build(ui, save) and keeps the resulting widget tree in sync with the document.
 class EditorSession {
 public:
     explicit EditorSession(ScriptHost& host);
@@ -96,7 +98,6 @@ public:
     bool hasUi();
     std::expected<void, std::string> rebuild();
 
-    // Top level pages for navigation. The root page holds widgets declared outside any page.
     const std::vector<UiNode>& topLevelLinks() const { return topLinks_; }
     const UiPage& root() const { return root_; }
     const UiPage& currentPage() const;

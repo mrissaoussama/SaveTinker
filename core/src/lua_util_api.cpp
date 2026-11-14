@@ -1,6 +1,9 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 
+#include "savetinker/compression.hpp"
+#include "savetinker/crypto.hpp"
+
 #include "lua_support.hpp"
 #include "savetinker/checksum.hpp"
 #include "savetinker/formats.hpp"
@@ -60,6 +63,60 @@ int zstdDecompressLua(lua_State* L) {
     auto result = zstdDecompress(data, dictionaries, kMaxDecompressedSize);
     if (!result) return luaL_error(L, "%s", result.error().c_str());
     pushBytes(L, *result);
+    return 1;
+}
+
+int zstdCompressLua(lua_State* L) {
+    auto result = zstdCompress(asBytes(checkString(L, 1)), static_cast<int>(luaL_optinteger(L, 2, 3)));
+    if (!result) return luaL_error(L, "%s", result.error().c_str());
+    pushBytes(L, *result);
+    return 1;
+}
+
+template <DeflateFormat Format>
+int deflateCompressLua(lua_State* L) {
+    auto result = deflateCompress(asBytes(checkString(L, 1)), Format, static_cast<int>(luaL_optinteger(L, 2, 6)));
+    if (!result) return luaL_error(L, "%s", result.error().c_str());
+    pushBytes(L, *result);
+    return 1;
+}
+
+template <DeflateFormat Format>
+int deflateDecompressLua(lua_State* L) {
+    auto result = deflateDecompress(asBytes(checkString(L, 1)), Format, kMaxDecompressedSize);
+    if (!result) return luaL_error(L, "%s", result.error().c_str());
+    pushBytes(L, *result);
+    return 1;
+}
+
+template <bool Encrypt>
+int aesLua(lua_State* L) {
+    const auto mode = parseAesMode(checkString(L, 1));
+    if (!mode) return luaL_error(L, "%s", mode.error().c_str());
+    const auto key = asBytes(checkString(L, 2));
+    const auto data = asBytes(checkString(L, 3));
+    const auto iv = lua_isnoneornil(L, 4) ? ByteView{} : asBytes(checkString(L, 4));
+    auto result = Encrypt ? aesEncrypt(*mode, key, data, iv) : aesDecrypt(*mode, key, data, iv);
+    if (!result) return luaL_error(L, "%s", result.error().c_str());
+    pushBytes(L, *result);
+    return 1;
+}
+
+int aesCmacLua(lua_State* L) {
+    auto result = aesCmac(asBytes(checkString(L, 1)), asBytes(checkString(L, 2)));
+    if (!result) return luaL_error(L, "%s", result.error().c_str());
+    pushBytes(L, ByteView(*result));
+    return 1;
+}
+
+int xorLua(lua_State* L) {
+    pushBytes(L, xorWith(asBytes(checkString(L, 1)), asBytes(checkString(L, 2))));
+    return 1;
+}
+
+int hmacSha256Lua(lua_State* L) {
+    const auto digest = hmacSha256(asBytes(checkString(L, 1)), asBytes(checkString(L, 2)));
+    pushBytes(L, ByteView(digest));
     return 1;
 }
 
@@ -259,6 +316,7 @@ void registerUtilities(lua_State* L, int stTableIndex) {
         {"md5", guarded<hashDigest<md5>>},
         {"sha1", guarded<hashDigest<sha1>>},
         {"sha256", guarded<hashDigest<sha256>>},
+        {"hmac_sha256", guarded<hmacSha256Lua>},
         {nullptr, nullptr},
     };
     luaL_newlib(L, hashFunctions);
@@ -280,7 +338,31 @@ void registerUtilities(lua_State* L, int stTableIndex) {
     lua_newtable(L);
     lua_pushcfunction(L, guarded<zstdDecompressLua>);
     lua_setfield(L, -2, "decompress");
+    lua_pushcfunction(L, guarded<zstdCompressLua>);
+    lua_setfield(L, -2, "compress");
     lua_setfield(L, stTableIndex, "zstd");
+
+    auto deflateTable = [&]<DeflateFormat Format>(const char* name) {
+        lua_newtable(L);
+        lua_pushcfunction(L, guarded<deflateCompressLua<Format>>);
+        lua_setfield(L, -2, "compress");
+        lua_pushcfunction(L, guarded<deflateDecompressLua<Format>>);
+        lua_setfield(L, -2, "decompress");
+        lua_setfield(L, stTableIndex, name);
+    };
+    deflateTable.operator()<DeflateFormat::Raw>("deflate");
+    deflateTable.operator()<DeflateFormat::Zlib>("zlib");
+    deflateTable.operator()<DeflateFormat::Gzip>("gzip");
+
+    static const luaL_Reg cryptoFunctions[] = {
+        {"aes_encrypt", guarded<aesLua<true>>},
+        {"aes_decrypt", guarded<aesLua<false>>},
+        {"aes_cmac", guarded<aesCmacLua>},
+        {"xor", guarded<xorLua>},
+        {nullptr, nullptr},
+    };
+    luaL_newlib(L, cryptoFunctions);
+    lua_setfield(L, stTableIndex, "crypto");
 
     static const luaL_Reg formatFunctions[] = {
         {"sarc", guarded<sarcRead>},

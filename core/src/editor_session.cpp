@@ -7,6 +7,7 @@
 #include <new>
 
 #include "lua_support.hpp"
+#include "savetinker/formats.hpp"
 
 namespace st {
 
@@ -237,7 +238,6 @@ std::string makeId(const Context& context, int table, const std::string& label) 
     return context.pageId + "/" + label + "#" + std::to_string(context.containers.back()->size());
 }
 
-// Common fields for widgets described by a spec table at index 2.
 UiNode readSpec(Context& context, WidgetKind kind) {
     lua_State* L = context.L;
     luaL_checktype(L, 2, LUA_TTABLE);
@@ -383,7 +383,29 @@ int buildSeparator(lua_State* L) {
     return add(context, std::move(node));
 }
 
-// Reads (title, fn) or ({title = ..., ...}, fn).
+int buildImage(lua_State* L) {
+    auto& context = checkBuilder(L);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    UiNode node;
+    node.kind = WidgetKind::Image;
+    node.label = optStringField(L, 2, "label").value_or("");
+    node.id = makeId(context, 2, node.label);
+    node.help = optStringField(L, 2, "help").value_or("");
+    if (auto data = optStringField(L, 2, "data")) {
+        node.image.assign(data->begin(), data->end());
+    } else if (auto pixels = optStringField(L, 2, "pixels")) {
+        const auto width = static_cast<int>(optNumberField(L, 2, "width").value_or(0));
+        const auto height = static_cast<int>(optNumberField(L, 2, "height").value_or(0));
+        const auto format = optStringField(L, 2, "format").value_or("rgba8");
+        auto tga = pixelsToTga(lua::asBytes(*pixels), width, height, format);
+        if (!tga) return luaL_error(L, "image '%s': %s", node.label.c_str(), tga.error().c_str());
+        node.image = std::move(*tga);
+    } else {
+        return luaL_error(L, "image '%s' needs data or pixels", node.label.c_str());
+    }
+    return add(context, std::move(node));
+}
+
 UiNode readContainerHeader(Context& context, WidgetKind kind, const char* titleKey) {
     lua_State* L = context.L;
     UiNode node;
@@ -508,6 +530,7 @@ void registerUiTypes(lua_State* L) {
         {"note", lua::guarded<buildNote>},
         {"warning", lua::guarded<buildWarning>},
         {"separator", lua::guarded<buildSeparator>},
+        {"image", lua::guarded<buildImage>},
         {"section", lua::guarded<buildSection>},
         {"popup", lua::guarded<buildPopup>},
         {"page", lua::guarded<buildPage>},

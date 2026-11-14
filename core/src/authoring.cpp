@@ -261,6 +261,7 @@ private:
             case WidgetKind::Note: line(indent, "note: " + node.label, node); break;
             case WidgetKind::Warning: line(indent, "warning: " + node.label, node); break;
             case WidgetKind::Separator: line(indent, "---", node); break;
+            case WidgetKind::Image: line(indent, "image: " + node.label + " (" + std::to_string(node.image.size()) + " bytes)", node); break;
             case WidgetKind::Label: line(indent, node.label + ": " + describe(node), node); break;
             default: line(indent, node.label + " = " + describe(node), node); break;
             }

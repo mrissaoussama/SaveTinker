@@ -4,6 +4,8 @@ add_library(savetinker_core STATIC
     src/byte_buffer.cpp
     src/checksum.cpp
     src/code_inspect.cpp
+    src/compression.cpp
+    src/crypto.cpp
     src/document.cpp
     src/editor_session.cpp
     src/editor_store.cpp

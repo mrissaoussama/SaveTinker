@@ -1,5 +1,6 @@
 #include "savetinker/formats.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <stdexcept>
@@ -15,7 +16,6 @@ struct FormatError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-// Bounds-checked reads in either byte order.
 class Reader {
 public:
     Reader(ByteView data, bool bigEndian) : data_(data), big_(bigEndian) {}
@@ -110,6 +110,39 @@ std::expected<Bytes, std::string> zstdDecompress(ByteView data, const std::vecto
         if (result == 0 && out.pos < out.size) break;
     }
     return output;
+}
+
+std::expected<Bytes, std::string> pixelsToTga(ByteView pixels, int width, int height, std::string_view format) {
+    if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return std::unexpected("image size must be 1-4096");
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    const std::size_t pixelSize = format == "rgb565" ? 2 : 4;
+    if (format != "rgba8" && format != "bgra8" && format != "rgb565")
+        return std::unexpected("unknown pixel format \"" + std::string(format) + "\" (rgba8, bgra8 or rgb565)");
+    if (pixels.size() < count * pixelSize) return std::unexpected("not enough pixel data for the image size");
+    Bytes tga(18 + count * 4, 0);
+    tga[2] = 2;
+    tga[12] = static_cast<std::uint8_t>(width);
+    tga[13] = static_cast<std::uint8_t>(width >> 8);
+    tga[14] = static_cast<std::uint8_t>(height);
+    tga[15] = static_cast<std::uint8_t>(height >> 8);
+    tga[16] = 32;
+    tga[17] = 0x28;
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto* in = &pixels[i * pixelSize];
+        auto* out = &tga[18 + i * 4];
+        if (format == "rgb565") {
+            const auto pixel = static_cast<std::uint16_t>(in[0] | (in[1] << 8));
+            out[2] = static_cast<std::uint8_t>(((pixel >> 11) & 0x1F) * 255 / 31);
+            out[1] = static_cast<std::uint8_t>(((pixel >> 5) & 0x3F) * 255 / 63);
+            out[0] = static_cast<std::uint8_t>((pixel & 0x1F) * 255 / 31);
+            out[3] = 255;
+        } else if (format == "rgba8") {
+            out[0] = in[2], out[1] = in[1], out[2] = in[0], out[3] = in[3];
+        } else {
+            std::copy_n(in, 4, out);
+        }
+    }
+    return tga;
 }
 
 std::expected<std::vector<SarcEntry>, std::string> readSarc(ByteView data) {

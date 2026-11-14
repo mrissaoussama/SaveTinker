@@ -5,6 +5,7 @@
 #include <map>
 
 #include "savetinker/editor_session.hpp"
+#include "savetinker/formats.hpp"
 
 using st::Bytes;
 using st::UiNode;
@@ -398,4 +399,25 @@ TEST_CASE("editors without build report it") {
     st::EditorSession session(host);
     CHECK_FALSE(session.hasUi());
     CHECK_FALSE(session.rebuild().has_value());
+}
+
+TEST_CASE("images take encoded files or raw pixels") {
+    Fixture f(R"(
+        function build(ui, save)
+            ui:image{ label = "Encoded", data = "\137PNG fake" }
+            ui:image{ label = "Thumbnail", pixels = string.rep("\255\0\0\255", 4), width = 2, height = 2 }
+            ui:image{ label = "Small", pixels = string.rep("\0\248", 1), width = 1, height = 1, format = "rgb565" }
+        end
+    )");
+    CHECK(f.node("Encoded").kind == WidgetKind::Image);
+    CHECK(f.node("Encoded").image.size() == 9);
+    const auto& tga = f.node("Thumbnail").image;
+    REQUIRE(tga.size() == 18 + 16);
+    CHECK(tga[12] == 2);
+    CHECK(tga[18] == 0);
+    CHECK(tga[20] == 255);
+    CHECK(f.node("Small").image[20] == 255);
+
+    CHECK_FALSE(st::pixelsToTga(st::Bytes(3), 1, 1, "rgba8").has_value());
+    CHECK_FALSE(st::pixelsToTga(st::Bytes(4), 1, 1, "yuv").has_value());
 }

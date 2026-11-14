@@ -6,6 +6,7 @@
 #include "app.hpp"
 #include "i18n.hpp"
 #include "save_flow.hpp"
+#include "savetinker/checksum.hpp"
 #include "savetinker/editor_session.hpp"
 #include "ui.hpp"
 
@@ -109,7 +110,6 @@ public:
             ui::holdFocusRequests(true);
             const std::string currentTop = session_->breadcrumbs().empty() ? "" : session_->breadcrumbs().front().id;
             bool sidebarFocused = false;
-            // Focusing a page shows it on the right; A or right moves into its fields.
             auto pageRow = [&](const char* id, const std::string& label, const std::string& pageId) {
                 const bool current = pageId == currentTop;
                 if (current && focusSidebar_) {
@@ -397,6 +397,20 @@ private:
         case WidgetKind::Note: ui::dimText(node.label); break;
         case WidgetKind::Warning: ui::wrappedText(node.label, ui::color::Warning); break;
         case WidgetKind::Separator: ImGui::Separator(); break;
+        case WidgetKind::Image: {
+            if (!node.label.empty()) ui::dimText(node.label);
+            const auto texture = app.textures().get(std::format("img:{:08x}:{}", st::crc32(node.image), node.image.size()), node.image);
+            if (!texture) {
+                ui::dimText(tr("This image could not be read."));
+                break;
+            }
+            const float maxHeight = ImGui::GetFontSize() * 12;
+            const float scale = std::min({width / static_cast<float>(texture.width), maxHeight / static_cast<float>(texture.height), 4.0f});
+            ImGui::Image(ImTextureRef(static_cast<ImTextureID>(texture.id)),
+                         ImVec2(static_cast<float>(texture.width) * scale, static_cast<float>(texture.height) * scale), ImVec2(0, 0),
+                         ImVec2(texture.uMax, texture.vMax));
+            break;
+        }
         case WidgetKind::PageLink: {
             const auto result = ui::row("##p", label, "\xE2\x80\xBA", ui::color::Text);
             trackFocus(node, result);
@@ -549,7 +563,6 @@ private:
         ImGui::EndPopup();
     }
 
-    // After a rebuild the copied node is stale; find the fresh one by id.
     void refreshChoiceNode() {
         if (!choiceNode_) return;
         std::function<const UiNode*(const std::vector<UiNode>&)> find = [&](const std::vector<UiNode>& nodes) -> const UiNode* {

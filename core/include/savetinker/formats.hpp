@@ -12,11 +12,12 @@
 
 namespace st {
 
-// Common Nintendo container formats, so editors can read game files without their own parsers.
 
 // zstd frames, optionally compressed with one of `dictionaries` (picked by the frame's dictionary id).
 std::expected<Bytes, std::string> zstdDecompress(ByteView data, const std::vector<ByteView>& dictionaries,
                                                  std::uint64_t maxSize);
+
+std::expected<Bytes, std::string> pixelsToTga(ByteView pixels, int width, int height, std::string_view format);
 
 struct SarcEntry {
     std::string name;
@@ -36,7 +37,6 @@ struct BymlValue {
         value;
 };
 
-// BYML versions 2 to 7, either byte order.
 std::expected<BymlValue, std::string> readByml(ByteView data);
 
 struct MsbtMessage {

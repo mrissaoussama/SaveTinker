@@ -37,7 +37,7 @@ if(NINTENDO_SWITCH OR NINTENDO_3DS)
     target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)
 endif()
 
-# zstd 1.5.7, decompression only.
+# zstd 1.5.7, single threaded.
 add_library(zstd STATIC
     zstd/common/entropy_common.c
     zstd/common/error_private.c
@@ -48,6 +48,19 @@ add_library(zstd STATIC
     zstd/decompress/zstd_ddict.c
     zstd/decompress/zstd_decompress.c
     zstd/decompress/zstd_decompress_block.c
+    zstd/compress/fse_compress.c
+    zstd/compress/hist.c
+    zstd/compress/huf_compress.c
+    zstd/compress/zstd_compress.c
+    zstd/compress/zstd_compress_literals.c
+    zstd/compress/zstd_compress_sequences.c
+    zstd/compress/zstd_compress_superblock.c
+    zstd/compress/zstd_double_fast.c
+    zstd/compress/zstd_fast.c
+    zstd/compress/zstd_lazy.c
+    zstd/compress/zstd_ldm.c
+    zstd/compress/zstd_opt.c
+    zstd/compress/zstd_preSplit.c
 )
 target_include_directories(zstd SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/zstd)
 target_compile_definitions(zstd PRIVATE ZSTD_DISABLE_ASM ZSTD_LEGACY_SUPPORT=0)

@@ -5,6 +5,8 @@ add_executable(savetinker_tests
     test_byte_buffer.cpp
     test_checksum.cpp
     test_code_inspect.cpp
+    test_compression.cpp
+    test_crypto.cpp
     test_document.cpp
     test_editor_session.cpp
     test_editor_store.cpp

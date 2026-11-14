@@ -214,3 +214,20 @@ TEST_CASE("memory hogs hit the memory limit") {
     CHECK(f.errorOf("local t = {} for i = 1, 1e7 do t[i] = ('x'):rep(100) .. i end").find("memory") != std::string::npos);
     CHECK(f.eval("return 'still alive'") == "still alive");
 }
+
+TEST_CASE("scripts can compress and encrypt") {
+    Fixture f;
+    CHECK(f.eval("return st.zlib.decompress(st.zlib.compress('abcabcabc'))") == "abcabcabc");
+    CHECK(f.eval("return st.gzip.decompress(st.gzip.compress('hi', 9))") == "hi");
+    CHECK(f.eval("return st.deflate.decompress(st.deflate.compress(''))") == "");
+    CHECK(f.eval("return st.zstd.decompress(st.zstd.compress(string.rep('z', 100)))") == std::string(100, 'z'));
+    CHECK(f.eval("return st.hex(st.crypto.aes_encrypt('ecb', st.unhex('000102030405060708090a0b0c0d0e0f'), "
+                 "st.unhex('00112233445566778899aabbccddeeff')))") == "69c4e0d86a7b0430d8cdb78070b4c55a");
+    CHECK(f.eval("local k, iv = string.rep('k', 16), string.rep('i', 16) "
+                 "return st.crypto.aes_decrypt('cbc', k, st.crypto.aes_encrypt('cbc', k, string.rep('p', 32), iv), iv)") ==
+          std::string(32, 'p'));
+    CHECK(f.eval("return #st.crypto.aes_cmac(string.rep('k', 16), 'data')") == "16");
+    CHECK(f.eval("return st.crypto.xor(st.crypto.xor('secret', 'key'), 'key')") == "secret");
+    CHECK(f.eval("return #st.hash.hmac_sha256('key', 'data')") == "32");
+    CHECK(f.errorOf("st.crypto.aes_encrypt('ecb', 'short', 'x')").find("16, 24 or 32") != std::string::npos);
+}
