@@ -231,3 +231,93 @@ TEST_CASE("scripts can compress and encrypt") {
     CHECK(f.eval("return #st.hash.hmac_sha256('key', 'data')") == "32");
     CHECK(f.errorOf("st.crypto.aes_encrypt('ecb', 'short', 'x')").find("16, 24 or 32") != std::string::npos);
 }
+
+TEST_CASE("flags and bits reach past the first byte") {
+    Fixture f;
+    f.eval("local file = st.save:file('save.dat') file:setBit(0, 13, true) file:flag(0, 8):set(true) return ''");
+    CHECK(f.document.file("save.dat").read<std::uint8_t>(1) == 0x21);
+    CHECK(f.eval("return tostring(st.save:file('save.dat'):bit(0, 13))") == "true");
+    CHECK(f.errorOf("st.save:file('save.dat'):bit(0, -1)").find("negative") != std::string::npos);
+}
+
+TEST_CASE("structs lay out records and bind their fields") {
+    Fixture f;
+    CHECK(f.eval(R"(
+        local Pair = st.struct{ {"a", "u8"}, {"b", "u8"} }
+        local Hero = st.struct{ {"level", "u8"}, {"_", "pad", 1}, {"hp", "u16"}, {"pair", Pair}, {"stats", "u8", count = 2},
+                                {"name", "utf8", 2, at = 8} }
+        local file = st.save:file("save.dat")
+        local heroes = Hero:array(file, 0, 1)
+        heroes[1].level:set(7)
+        heroes[1].hp:set(0x0102)
+        heroes[1].pair.b:set(9)
+        heroes[1].stats[2]:set(5)
+        return table.concat({ Hero.size, Pair.size, file:u8(0), file:u16(2), file:u8(5), file:u8(7), heroes[1].name:get(),
+                              table.concat(Hero:names(), ",") }, " ")
+    )") == "10 2 7 258 9 5 AB level,hp,pair,stats,name");
+    CHECK(f.eval("return st.struct({ {'x', 'u16'} }, { endian = 'big' }):at(st.save:file('save.dat'), 8).x:get()") == "16706");
+    CHECK(f.errorOf("st.struct{ {'x', 'u24'} }").find("unknown field type") != std::string::npos);
+}
+
+TEST_CASE("st.gvas reads Unreal saves and keeps sizes right when strings change") {
+    Fixture f;
+    f.eval(R"(
+        local function fs(s) return string.pack("<i4", #s + 1) .. s .. "\0" end
+        local function prop(name, kind, header, body) return fs(name) .. fs(kind) .. string.pack("<i4i4", #body, 0) .. header .. body end
+        local stats = prop("Level", "IntProperty", "\0", string.pack("<i4", 7)) .. prop("Title", "StrProperty", "\0", fs("Hero")) .. fs("None")
+        local data = "GVAS" .. string.pack("<i4i4I2I2I2I4", 2, 522, 4, 27, 2, 0) .. fs("++UE4+Release-4.27") .. string.pack("<i4i4", 3, 0)
+            .. fs("/Script/Game.MySave")
+            .. prop("Gold", "IntProperty", "\0", string.pack("<i4", 250))
+            .. prop("Name", "StrProperty", "\0", fs("Rin"))
+            .. fs("Alive") .. fs("BoolProperty") .. string.pack("<i4i4", 0, 0) .. "\1\0"
+            .. prop("Pos", "StructProperty", fs("Vector") .. string.rep("\0", 17), string.pack("<fff", 1, 2, 3))
+            .. prop("Stats", "StructProperty", fs("PlayerStats") .. string.rep("\0", 17), stats)
+            .. prop("Items", "ArrayProperty", fs("IntProperty") .. "\0", string.pack("<i4i4i4", 2, 10, 20))
+            .. prop("Tags", "ArrayProperty", fs("NameProperty") .. "\0", string.pack("<i4", 2) .. fs("a") .. fs("bb"))
+            .. prop("Odd", "TextProperty", "\0", "\1\2\3")
+            .. fs("None") .. string.pack("<i4", 0)
+        st.save:file("save.dat"):setContent(data)
+        return ""
+    )");
+    CHECK(f.eval(R"(
+        local gvas = require("st.gvas")
+        local file = st.save:file("save.dat")
+        local save = assert(gvas.parse(file))
+        local p = {}
+        for _, node in ipairs(save.properties) do p[node.name] = node end
+        local stats = {}
+        for _, node in ipairs(p.Stats.children) do stats[node.name] = node end
+        return table.concat({ save.header.engine, save.header.class, #save.properties, gvas.bind(file, p.Gold):get(), p.Name.value,
+            tostring(gvas.bind(file, p.Alive):get()), p.Pos.children[3].kind, gvas.bind(file, p.Pos.children[3]):get(),
+            stats.Title.value, gvas.bind(file, p.Items.children[2]):get(), p.Tags.children[2].value, p.Odd.kind }, " ")
+    )") == "4.27.2-0 /Script/Game.MySave 8 250 Rin true f32 3.0 Hero 20 bb raw");
+    CHECK(f.eval(R"(
+        local gvas = require("st.gvas")
+        local file = st.save:file("save.dat")
+        local function find(list, name) for _, n in ipairs(list) do if n.name == name then return n end end end
+        local save = gvas.parse(file)
+        gvas.bind(file, find(save.properties, "Name")):set("Rinoa")
+        save = gvas.parse(file)
+        gvas.bind(file, find(find(save.properties, "Stats").children, "Title")):set("Champion \u{e9}")
+        save = assert(gvas.parse(file))
+        gvas.bind(file, find(save.properties, "Tags").children[1]):set("abc")
+        save = assert(gvas.parse(file))
+        return find(save.properties, "Name").value .. "|" .. find(find(save.properties, "Stats").children, "Title").value .. "|"
+            .. find(save.properties, "Tags").children[1].value .. "|" .. find(save.properties, "Odd").kind
+    )") == "Rinoa|Champion \xC3\xA9|abc|raw");
+    CHECK(f.eval("local g = require('st.gvas') st.save:file('save.dat'):setContent('nope') return select(2, g.parse(st.save:file('save.dat')))")
+              .find("not an Unreal save") != std::string::npos);
+}
+
+TEST_CASE("st.es3 round trips encrypted and compressed saves") {
+    Fixture f;
+    CHECK(f.eval(R"(
+        local es3 = require("st.es3")
+        local text = '{"gold":{"__type":"int","value":5}}'
+        local sealed = es3.encode(text, "password", { gzip = true })
+        local wrong = select(2, es3.decode(sealed, "nope"))
+        return tostring(es3.encrypted(sealed)) .. " " .. es3.decode(sealed, "password") .. " " .. es3.decode(text) .. " " .. tostring(wrong)
+    )") == R"(true {"gold":{"__type":"int","value":5}} {"gold":{"__type":"int","value":5}} wrong password)");
+    CHECK(f.eval("return st.hex(st.crypto.pbkdf2('sha1', 'password', 'salt', 2, 20))") == "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957");
+    CHECK(f.eval("return #st.hash.hmac_sha1('k', 'd')") == "20");
+}

@@ -229,11 +229,30 @@ std::expected<std::array<std::uint8_t, 16>, std::string> aesCmac(ByteView key, B
     return state;
 }
 
-std::array<std::uint8_t, 32> hmacSha256(ByteView key, ByteView data) {
+std::expected<HashKind, std::string> parseHashKind(std::string_view name) {
+    if (name == "sha1") return HashKind::Sha1;
+    if (name == "sha256") return HashKind::Sha256;
+    return std::unexpected("unknown hash \"" + std::string(name) + "\" (sha1 or sha256)");
+}
+
+namespace {
+
+Bytes digest(HashKind kind, ByteView data) {
+    if (kind == HashKind::Sha1) {
+        const auto value = sha1(data);
+        return Bytes(value.begin(), value.end());
+    }
+    const auto value = sha256(data);
+    return Bytes(value.begin(), value.end());
+}
+
+}
+
+Bytes hmac(HashKind kind, ByteView key, ByteView data) {
     std::array<std::uint8_t, 64> block{};
     if (key.size() > block.size()) {
-        const auto digest = sha256(key);
-        std::copy(digest.begin(), digest.end(), block.begin());
+        const auto hashed = digest(kind, key);
+        std::copy(hashed.begin(), hashed.end(), block.begin());
     } else {
         std::copy(key.begin(), key.end(), block.begin());
     }
@@ -243,9 +262,35 @@ std::array<std::uint8_t, 32> hmacSha256(ByteView key, ByteView data) {
         outer[i] = block[i] ^ 0x5C;
     }
     inner.insert(inner.end(), data.begin(), data.end());
-    const auto innerDigest = sha256(inner);
+    const auto innerDigest = digest(kind, inner);
     outer.insert(outer.end(), innerDigest.begin(), innerDigest.end());
-    return sha256(outer);
+    return digest(kind, outer);
+}
+
+std::array<std::uint8_t, 32> hmacSha256(ByteView key, ByteView data) {
+    const auto value = hmac(HashKind::Sha256, key, data);
+    std::array<std::uint8_t, 32> out{};
+    std::copy(value.begin(), value.end(), out.begin());
+    return out;
+}
+
+std::expected<Bytes, std::string> pbkdf2(HashKind kind, ByteView password, ByteView salt, std::uint32_t iterations, std::size_t length) {
+    if (iterations == 0 || iterations > 1000000) return std::unexpected("iterations must be 1-1000000");
+    if (length == 0 || length > 1024) return std::unexpected("length must be 1-1024");
+    Bytes out;
+    for (std::uint32_t block = 1; out.size() < length; ++block) {
+        Bytes input(salt.begin(), salt.end());
+        for (int shift = 24; shift >= 0; shift -= 8) input.push_back(static_cast<std::uint8_t>(block >> shift));
+        Bytes u = hmac(kind, password, input);
+        Bytes t = u;
+        for (std::uint32_t i = 1; i < iterations; ++i) {
+            u = hmac(kind, password, u);
+            for (std::size_t j = 0; j < t.size(); ++j) t[j] ^= u[j];
+        }
+        out.insert(out.end(), t.begin(), t.end());
+    }
+    out.resize(length);
+    return out;
 }
 
 Bytes xorWith(ByteView data, ByteView key) {

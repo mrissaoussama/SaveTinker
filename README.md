@@ -33,6 +33,8 @@ savetinker-cli pack editors/ repo/ --name "My Editors"
 savetinker-cli inspect my-editor/main.lua
 ```
 
+In an editor, X searches the current page by label and value.
+
 Editors can also be started on the console: mark fields in the hex editor (Y menu) and install the draft from
 **Create an editor** on the game screen.
 
@@ -100,7 +102,20 @@ end
 
 Every widget takes `label`, `key`, `help`, `readonly`, `on_change` and `actions`. Bindings:
 `file:field(offset, type[, endian])`, `file:flag(offset, bit)`, `file:text(offset, length[, encoding])`,
-`st.bind(get, set)`.
+`st.bind(get, set)`. Bit numbers can go past 7: `file:flag(0x100, 137)` is bit 1 of byte 0x111.
+
+Repeated records:
+
+```lua
+local Hero = st.struct{ {"level", "u8"}, {"_", "pad", 1}, {"hp", "u16"}, {"name", "utf16", 8},
+                        {"stats", "u8", count = 4}, {"pos", Vector}, {"flags", "bits", 16}, {"exp", "u32", at = 0x20} }
+for i, hero in ipairs(Hero:array(file, 0x400, 30)) do
+    page:int{ label = "Level " .. i, bind = hero.level }
+end
+```
+
+Fields are bindings (`hero.stats[2]`, `hero.flags[5]`, nested `hero.pos.x`). `Hero.size` is the record size,
+`st.struct(spec, {endian = "big", size = 0x40})` sets the byte order or pads the size.
 
 ### Lua API
 
@@ -123,10 +138,13 @@ Offsets start at 0. Endian is `"little"`/`"le"` or `"big"`/`"be"`. Binary data i
 | `st.hash.crc32/crc16/adler32/murmur3/md5/sha1/sha256(data)`, `st.hash.hmac_sha256(key, data)` | Hashes |
 | `st.zlib`, `st.deflate`, `st.gzip`, `st.zstd`: `.compress(data[, level])`, `.decompress(data)` | Compression |
 | `st.crypto.aes_encrypt/aes_decrypt(mode, key, data[, iv])` | `ecb`, `cbc`, `ctr`; no padding |
-| `st.crypto.aes_cmac(key, data)`, `st.crypto.xor(data, key)` | |
+| `st.crypto.aes_cmac(key, data)`, `st.crypto.xor(data, key)`, `st.hash.hmac_sha1(key, data)` | |
+| `st.crypto.pbkdf2(hash, password, salt, iterations, length)` | `sha1` or `sha256` |
 | `st.format.sarc/byml/msbt(data)` | Nintendo archives and messages |
 | `st.hex`, `st.unhex`, `st.json.decode/encode`, `st.json.null` | |
-| `require(name)` | `name.lua` from the editor, then the shared `_lib` folder |
+| `require(name)` | `name.lua` from the editor (`a.b` is `a/b.lua`), then the shared `_lib` folder |
+| `require("st.gvas")` | Unreal saves: `parse(file)` gives a property tree, `bind(file, node)` edits a value |
+| `require("st.es3")` | Easy Save 3 (Unity): `decode(data[, password])`, `encode(text[, password, {gzip = true}])` |
 | `st.data(path)`, `st.labels(path)` | Editor files; `labels` tries `<dir>/<lang>/<file>` first |
 | `st.game_data.read(path[, optional])`, `st.game_data.list(dir)` | Game files, with `"game_data": true` |
 | `print(...)`, `st.warn(...)` | Editor log (- button) |

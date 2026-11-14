@@ -56,3 +56,13 @@ TEST_CASE("HMAC-SHA256 matches RFC 4231 and xor repeats the key") {
           "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
     CHECK(st::xorWith(st::Bytes{1, 2, 3, 4}, st::Bytes{0xFF, 0x0F}) == st::Bytes{0xFE, 0x0D, 0xFC, 0x0B});
 }
+
+TEST_CASE("PBKDF2 matches RFC 6070 and RFC 7914") {
+    CHECK(toHex(*st::pbkdf2(st::HashKind::Sha1, test::viewOf("password"), test::viewOf("salt"), 1, 20)) ==
+          "0c60c80f961f0e71f3a9b524af6012062fe037a6");
+    CHECK(toHex(*st::pbkdf2(st::HashKind::Sha1, test::viewOf("password"), test::viewOf("salt"), 4096, 20)) ==
+          "4b007901b765489abead49d926f721d065a429c1");
+    CHECK(toHex(*st::pbkdf2(st::HashKind::Sha256, test::viewOf("passwd"), test::viewOf("salt"), 1, 64)) ==
+          "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783");
+    CHECK_FALSE(st::pbkdf2(st::HashKind::Sha1, {}, {}, 0, 16).has_value());
+}

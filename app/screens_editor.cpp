@@ -55,6 +55,7 @@ public:
         std::vector<Hint> hints = {{"A", tr("Edit")}};
         if (focusedHasActions_) hints.push_back({"Y", tr("Actions")});
         if (!session_->topLevelLinks().empty()) hints.push_back({"L", tr("Page")}), hints.push_back({"R", tr("Page")});
+        hints.push_back({"X", tr("Search")});
         hints.push_back({"ZL", tr("Undo")});
         hints.push_back({"ZR", tr("Redo")});
         hints.push_back({"+", tr("Write")});
@@ -168,6 +169,10 @@ public:
         focusContent_ = false;
         canLeaveFields_ = sidebar;
         const auto& page = session_->currentPage();
+        if (!search_.empty() && ui::row("##search", trf("Search: {}", search_), tr("Clear"), ui::color::Accent).activated) {
+            search_.clear();
+            pageChanged_ = true;
+        }
         drawNodes(app, page.nodes, sidebar && crumbs.size() <= 1 && page.id.empty());
         if (page.nodes.empty()) ui::dimText(tr("Nothing here."));
         ui::wrapNavigation();
@@ -250,6 +255,11 @@ private:
         if (ui::pressed(ui::Button::ZR, true)) report(app, session_->redo(), true);
         if (ui::pressed(ui::Button::Plus)) reviewing_ = true;
         if (ui::pressed(ui::Button::Minus)) showLog_ = true;
+        if (ui::pressed(ui::Button::X))
+            app.promptText({tr("Search this page"), search_, TextKind::Text, 64}, [this](App&, std::string text) {
+                search_ = lower(std::move(text));
+                pageChanged_ = true;
+            });
         const auto& links = session_->topLevelLinks();
         if (!links.empty() && (ui::pressed(ui::Button::L) || ui::pressed(ui::Button::R))) {
             std::vector<std::string> ids;
@@ -276,9 +286,23 @@ private:
         pending_ = [this, &app, node, value] { report(app, session_->setValue(node, value)); };
     }
 
+    static std::string lower(std::string text) {
+        std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    }
+
+    bool matchesSearch(const UiNode& node) const {
+        if (search_.empty()) return true;
+        std::string text = node.label + " " + node.display + " " + st::uiValueToString(node.value);
+        if (const auto selected = node.selectedOption()) text += " " + node.options[*selected].label;
+        if (lower(text).find(search_) != std::string::npos) return true;
+        return std::ranges::any_of(node.children, [this](const UiNode& child) { return matchesSearch(child); });
+    }
+
     void drawNodes(App& app, const std::vector<UiNode>& nodes, bool skipLinks) {
         for (const auto& node : nodes) {
             if (skipLinks && node.kind == WidgetKind::PageLink) continue;
+            if (!matchesSearch(node)) continue;
             ImGui::PushID(node.id.c_str());
             drawNode(app, node);
             ImGui::PopID();
@@ -424,14 +448,18 @@ private:
             break;
         }
         case WidgetKind::Section: {
+            if (!search_.empty()) ImGui::SetNextItemOpen(true);
             const bool open = ImGui::CollapsingHeader(label.c_str(), node.collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen);
             ui::RowResult header;
             header.focused = ImGui::IsItemFocused();
             trackFocus(node, header);
             if (open) {
+                const std::string search = search_;
+                if (lower(node.label).find(search_) != std::string::npos) search_.clear();
                 ImGui::Indent(ImGui::GetFontSize() * 0.6f);
                 drawNodes(app, node.children, false);
                 ImGui::Unindent(ImGui::GetFontSize() * 0.6f);
+                search_ = search;
             }
             break;
         }
@@ -642,6 +670,7 @@ private:
     std::optional<UiNode> choiceNode_;
     std::optional<UiNode> actionNode_;
     std::string choiceFilter_;
+    std::string search_;
     std::function<void()> pending_;
 };
 

@@ -2,6 +2,7 @@
 #include <new>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "lua_support.hpp"
 
@@ -162,21 +163,26 @@ int fileEndian(lua_State* L) {
     return 1;
 }
 
+// Bit n counts from bit 0 of the byte at `offset`, so bit 13 is bit 5 of the next byte.
+std::pair<std::uint64_t, unsigned> checkBitAddress(lua_State* L) {
+    const auto offset = checkOffset(L, 2);
+    const auto bit = luaL_checkinteger(L, 3);
+    luaL_argcheck(L, bit >= 0, 3, "bit must not be negative");
+    return {offset + static_cast<std::uint64_t>(bit) / 8, static_cast<unsigned>(bit % 8)};
+}
+
 int fileBit(lua_State* L) {
     auto& file = checkFile(L, 1);
-    const auto bit = luaL_checkinteger(L, 3);
-    luaL_argcheck(L, bit >= 0 && bit <= 7, 3, "bit must be 0-7");
-    lua_pushboolean(L, bufferOf(file).readBit(checkOffset(L, 2), static_cast<unsigned>(bit)));
+    const auto [offset, bit] = checkBitAddress(L);
+    lua_pushboolean(L, bufferOf(file).readBit(offset, bit));
     return 1;
 }
 
 int fileSetBit(lua_State* L) {
     auto& file = checkFile(L, 1);
-    const auto offset = checkOffset(L, 2);
-    const auto bit = luaL_checkinteger(L, 3);
-    luaL_argcheck(L, bit >= 0 && bit <= 7, 3, "bit must be 0-7");
+    const auto [offset, bit] = checkBitAddress(L);
     ByteBuffer scratch(bufferOf(file).readBytes(offset, 1));
-    scratch.writeBit(0, static_cast<unsigned>(bit), lua_toboolean(L, 4) != 0);
+    scratch.writeBit(0, bit, lua_toboolean(L, 4) != 0);
     file.document->write(file.name, offset, scratch.view());
     return 0;
 }
@@ -295,10 +301,9 @@ int fileField(lua_State* L) {
 
 int fileFlag(lua_State* L) {
     auto& file = checkFile(L, 1);
-    BindingRef binding{file.document, file.name, checkOffset(L, 2), BindingRef::Shape::Bit};
-    const auto bit = luaL_checkinteger(L, 3);
-    luaL_argcheck(L, bit >= 0 && bit <= 7, 3, "bit must be 0-7");
-    binding.bit = static_cast<unsigned>(bit);
+    const auto [offset, bit] = checkBitAddress(L);
+    BindingRef binding{file.document, file.name, offset, BindingRef::Shape::Bit};
+    binding.bit = bit;
     pushBinding(L, std::move(binding));
     return 1;
 }

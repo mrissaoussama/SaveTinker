@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "lua_sources.hpp"
 #include "lua_support.hpp"
 
 namespace st {
@@ -59,43 +60,6 @@ DataLoader directoryDataLoader(fs::path editorDir) {
         if (!isSafeRelativePath(path)) return std::nullopt;
         return readTextFile(editorDir / fs::path(path));
     };
-}
-
-namespace {
-
-constexpr const char* kPrelude = R"lua(
-function st.bind(get, set)
-    return {
-        get = function() return get() end,
-        set = function(_, value) set(value) end,
-    }
-end
-
-function st.game.has_dlc(id)
-    id = string.upper(id)
-    for _, owned in ipairs(st.game.dlc) do
-        if owned == id or owned:sub(-#id) == id then return true end
-    end
-    return false
-end
-
--- Compares the running game version with a pattern like ">=1.1.0" or "1.0.0 - 1.2.0".
-function st.game.version_is(pattern)
-    return st.version_matches(pattern, st.game.version)
-end
-
-function st.labels(path)
-    local dir, file = path:match("^(.*)/([^/]+)$")
-    local text = dir and st.data(dir .. "/" .. st.lang .. "/" .. file, true)
-    local raw = st.json.decode(text or st.data(path))
-    local labels = {}
-    for key, value in pairs(raw) do
-        labels[math.tointeger(tonumber(key)) or key] = value
-    end
-    return labels
-end
-)lua";
-
 }
 
 struct ScriptHost::Impl {
@@ -181,7 +145,10 @@ struct ScriptHost::Impl {
         lua_pop(L, 1);
 
         if (!isValidModuleName(name)) return luaL_error(L, "invalid module name '%s'", name.c_str());
-        const auto code = from(L).loader(name);
+        std::optional<std::string> code;
+        for (const auto& [builtinName, source] : kBuiltinModules)
+            if (builtinName == name) code = std::string(source);
+        if (!code && !name.starts_with("st.")) code = from(L).loader(name);
         if (!code) return luaL_error(L, "module '%s' not found", name.c_str());
         const std::string chunkName = "@" + name;
         if (luaL_loadbufferx(L, code->data(), code->size(), chunkName.c_str(), "t") != LUA_OK) return lua_error(L);
@@ -354,7 +321,7 @@ struct ScriptHost::Impl {
         lua::registerUtilities(L, -1);
         lua_setglobal(L, "st");
 
-        if (luaL_loadbufferx(L, kPrelude, std::strlen(kPrelude), "=prelude", "t") != LUA_OK || lua_pcall(L, 0, 0, 0) != LUA_OK)
+        if (luaL_loadbufferx(L, kPreludeSource.data(), kPreludeSource.size(), "=prelude", "t") != LUA_OK || lua_pcall(L, 0, 0, 0) != LUA_OK)
             throw std::runtime_error(std::string("prelude failed: ") + lua_tostring(L, -1));
     }
 

@@ -19,7 +19,12 @@ std::expected<Bytes, std::string> aesEncrypt(AesMode mode, ByteView key, ByteVie
 std::expected<Bytes, std::string> aesDecrypt(AesMode mode, ByteView key, ByteView data, ByteView iv = {});
 std::expected<std::array<std::uint8_t, 16>, std::string> aesCmac(ByteView key, ByteView data);
 
+enum class HashKind { Sha1, Sha256 };
+
+std::expected<HashKind, std::string> parseHashKind(std::string_view name);
+Bytes hmac(HashKind kind, ByteView key, ByteView data);
 std::array<std::uint8_t, 32> hmacSha256(ByteView key, ByteView data);
+std::expected<Bytes, std::string> pbkdf2(HashKind kind, ByteView password, ByteView salt, std::uint32_t iterations, std::size_t length);
 Bytes xorWith(ByteView data, ByteView key);
 
 }

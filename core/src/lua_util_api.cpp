@@ -120,6 +120,21 @@ int hmacSha256Lua(lua_State* L) {
     return 1;
 }
 
+int hmacSha1Lua(lua_State* L) {
+    pushBytes(L, hmac(HashKind::Sha1, asBytes(checkString(L, 1)), asBytes(checkString(L, 2))));
+    return 1;
+}
+
+int pbkdf2Lua(lua_State* L) {
+    const auto kind = parseHashKind(checkString(L, 1));
+    if (!kind) return luaL_error(L, "%s", kind.error().c_str());
+    auto result = pbkdf2(*kind, asBytes(checkString(L, 2)), asBytes(checkString(L, 3)),
+                         static_cast<std::uint32_t>(luaL_checkinteger(L, 4)), static_cast<std::size_t>(luaL_checkinteger(L, 5)));
+    if (!result) return luaL_error(L, "%s", result.error().c_str());
+    pushBytes(L, *result);
+    return 1;
+}
+
 int sarcRead(lua_State* L) {
     auto entries = readSarc(asBytes(checkString(L, 1)));
     if (!entries) return luaL_error(L, "%s", entries.error().c_str());
@@ -317,6 +332,7 @@ void registerUtilities(lua_State* L, int stTableIndex) {
         {"sha1", guarded<hashDigest<sha1>>},
         {"sha256", guarded<hashDigest<sha256>>},
         {"hmac_sha256", guarded<hmacSha256Lua>},
+        {"hmac_sha1", guarded<hmacSha1Lua>},
         {nullptr, nullptr},
     };
     luaL_newlib(L, hashFunctions);
@@ -359,6 +375,7 @@ void registerUtilities(lua_State* L, int stTableIndex) {
         {"aes_decrypt", guarded<aesLua<false>>},
         {"aes_cmac", guarded<aesCmacLua>},
         {"xor", guarded<xorLua>},
+        {"pbkdf2", guarded<pbkdf2Lua>},
         {nullptr, nullptr},
     };
     luaL_newlib(L, cryptoFunctions);
