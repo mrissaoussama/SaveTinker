@@ -1,0 +1,20 @@
+[
+  {
+    "title_id": "0100000000001000",
+    "name": "Sample Game",
+    "publisher": "SaveTinker",
+    "version": "1.0.0"
+  },
+  {
+    "title_id": "0100000000002000",
+    "name": "Puzzle Garden",
+    "publisher": "Example Studio",
+    "version": "2.1.0"
+  },
+  {
+    "title_id": "0100000000003000",
+    "name": "Racing Night",
+    "publisher": "Example Studio",
+    "version": "1.4.2"
+  }
+]

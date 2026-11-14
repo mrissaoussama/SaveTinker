@@ -95,6 +95,10 @@ public:
     virtual std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) = 0;
 };
 
+// Path of `path` below `root` with forward slashes. Works on device mounts like "save:/" where
+// std::filesystem::relative would need canonical paths.
+std::string relativePath(const std::filesystem::path& path, const std::filesystem::path& root);
+
 Document loadDocument(SaveMount& mount);
 // Writes files that differ from what is on the mount, then commits.
 void storeDocument(const Document& document, SaveMount& mount);

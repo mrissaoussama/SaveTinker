@@ -173,6 +173,9 @@ std::optional<std::string> SwitchPlatform::runningTitleId() {
     if (!pmdmntReady_) return std::nullopt;
     u64 processId = 0;
     if (R_FAILED(pmdmntGetApplicationProcessId(&processId))) return std::nullopt;
+    // Launched over a game (or as the application itself), the application process is SaveTinker.
+    u64 ownProcessId = 0;
+    if (R_SUCCEEDED(svcGetProcessId(&ownProcessId, CUR_PROCESS_HANDLE)) && ownProcessId == processId) return std::nullopt;
     u64 programId = 0;
     if (pminfoReady_ && R_SUCCEEDED(pminfoGetProgramId(&programId, processId))) return formatTitleId(programId);
     return std::string{};

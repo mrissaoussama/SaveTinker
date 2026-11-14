@@ -77,3 +77,9 @@ TEST_CASE("chunked writes commit between chunks") {
     mount.commit();
     CHECK(commits == 3);
 }
+
+TEST_CASE("relative paths work on device style roots") {
+    CHECK(st::relativePath("stsave:/slot_00/caption.sav", "stsave:/") == "slot_00/caption.sav");
+    CHECK(st::relativePath("sdmc:/switch/x/a.lua", "sdmc:/switch/x") == "a.lua");
+    CHECK(st::relativePath("/tmp/save/a/b.bin", "/tmp/save") == "a/b.bin");
+}

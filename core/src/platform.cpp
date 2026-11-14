@@ -53,7 +53,7 @@ std::vector<SaveFileEntry> DirectorySaveMount::listFiles() {
     std::vector<SaveFileEntry> entries;
     for (const auto& entry : fs::recursive_directory_iterator(root_)) {
         if (!entry.is_regular_file()) continue;
-        entries.push_back({fs::relative(entry.path(), root_).generic_string(), entry.file_size()});
+        entries.push_back({relativePath(entry.path(), root_), entry.file_size()});
     }
     std::ranges::sort(entries, {}, &SaveFileEntry::path);
     return entries;
@@ -90,6 +90,14 @@ void DirectorySaveMount::remove(const std::string& path) {
 
 void DirectorySaveMount::commit() {
     if (commitHook_) commitHook_();
+}
+
+std::string relativePath(const fs::path& path, const fs::path& root) {
+    const std::string full = path.generic_string();
+    std::string prefix = root.generic_string();
+    if (!prefix.empty() && prefix.back() != '/') prefix += '/';
+    if (full.starts_with(prefix)) return full.substr(prefix.size());
+    return path.lexically_relative(root).generic_string();
 }
 
 Document loadDocument(SaveMount& mount) {

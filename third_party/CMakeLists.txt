@@ -31,4 +31,8 @@ add_library(imgui STATIC
     imgui/imgui_widgets.cpp
 )
 target_include_directories(imgui SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/imgui ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends)
+target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
 target_compile_options(imgui PRIVATE -w)
+if(NINTENDO_SWITCH)
+    target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)
+endif()

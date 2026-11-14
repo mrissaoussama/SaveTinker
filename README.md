@@ -5,14 +5,39 @@ installed from any number of repositories.
 
 ## Building
 
-Needs devkitPro (devkitA64, libnx, `switch-dev`) and, for the PC build and tests, MSYS2 UCRT64 GCC + Ninja.
+Needs devkitPro (devkitA64, libnx, `switch-dev`, `switch-sdl2`, `switch-curl`, `switch-mesa`) and, for the
+desktop build and tests, MSYS2 UCRT64 GCC, Ninja, SDL2 and curl.
 
 ```sh
-scripts/build.sh pc       # host build + unit tests
-scripts/build.sh switch   # build/switch/app/switch/SaveTinker.nro
+scripts/build.sh pc       # desktop build + unit tests
+scripts/build.sh switch   # build/switch/app/SaveTinker.nro
 ```
 
-Send to a console with `nxlink -s build/switch/app/switch/SaveTinker.nro`.
+Send to a console with `nxlink -s build/switch/app/SaveTinker.nro`.
+
+The desktop build runs the same UI against a folder that acts as a console:
+
+```sh
+build/pc/app/SaveTinker --demo              # creates ./demo-console from examples/
+build/pc/app/SaveTinker --console <folder>
+```
+
+Keyboard on desktop: arrows move, Enter selects, Esc goes back, Q/E switch tabs or pages, X/Y are the
+X/Y buttons, Ctrl+Z/Ctrl+Y undo and redo, Ctrl+S writes the save.
+
+### UI testing
+
+Configure with `-DSAVETINKER_AUTOPILOT=ON` and place `autopilot.txt` in the data folder
+(`sdmc:/switch/SaveTinker/` on Switch, `<console>/SaveTinker/` on desktop). It replays button presses and
+saves screenshots to `screenshots/`, which also works inside emulators:
+
+```
+wait 60
+press DOWN 2
+press A
+shot game-screen
+quit
+```
 
 ## Layout
 
@@ -20,7 +45,8 @@ Send to a console with `nxlink -s build/switch/app/switch/SaveTinker.nro`.
 |---|---|
 | `core/` | Platform-independent library: documents and undo, Lua host, manifests, repos, backups |
 | `platform/` | `pc/` folder-backed console for testing, `switch/` libnx backend |
-| `app/switch/` | Switch front end |
+| `app/` | Dear ImGui front end shared by Switch and desktop |
+| `net/` | libcurl HTTP client |
 | `examples/editors/` | Example editors |
 | `tests/` | doctest unit tests |
 
@@ -47,7 +73,47 @@ An editor is a folder with `manifest.json` and Lua files.
 The entry script (`main.lua` by default) can define:
 
 - `detect(save)` returns true when the save matches what the editor understands
+- `build(ui, save)` describes the editor screen
 - `before_save(save)` runs before writing, typically to fix checksums
+
+### Building the UI
+
+`build` runs again after every change, so plain Lua decides what is shown. Pages only run when opened.
+
+```lua
+function build(ui, save)
+    local file = save:file("save.dat")
+    ui:page("Player", function(page)
+        page:int{ label = "Gold", bind = file:field(0x08, "u32"), max = 999999, step = 100,
+                  actions = { { label = "Max", run = function() file:set(0x08, "u32", 999999) end } } }
+        page:dropdown{ label = "Class", bind = file:field(0x0E, "u8"), options = { "Knight", "Mage" },
+                       on_change = function(class) file:set(0x48, "u8", class == 1 and 80 or 20) end }
+        local dlc = file:flag(0x0D, 1)
+        page:toggle{ label = "Expansion", bind = dlc }
+        if dlc:get() then
+            page:int{ label = "Expansion level", bind = file:field(0x30, "u8") }
+        end
+    end)
+end
+```
+
+| Widget | Notes |
+|---|---|
+| `int`, `float` | `min`, `max`, `step`, `format = "hex"`; ranges default to the field type |
+| `text` | length comes from `file:text(offset, length, encoding)` or `max_length` |
+| `toggle` | booleans, bits, or numbers with `on`/`off` values |
+| `dropdown`, `segmented`, `tristate` | `options`: `{"a", "b"}` (values 0, 1...), `{{value=, label=}}` or `{[id] = "label"}` |
+| `multiselect` | bit flags: `bits = {[0] = "Fire", [3] = "Ice"}` |
+| `button` | `run` function; all writes inside form one undo step |
+| `label`, `note`, `warning`, `separator` | read only |
+| `section(title or {title=, actions=, collapsed=}, fn)` | grouped widgets with optional buttons |
+| `popup({label=}, fn)` | opens a panel |
+| `page(title, fn)` | top level pages appear in the side bar; nested pages open inline |
+| `ui:state(name, default)` | UI-only value that survives rebuilds, usable as `bind` |
+
+Every widget accepts `label`, `key`, `help`, `readonly`, `on_change` and `actions`. Bindings are
+`file:field(offset, type[, endian])`, `file:flag(offset, bit)`, `file:text(offset, length[, encoding])` or
+`st.bind(getter, setter)`.
 
 ### Lua API
 
@@ -71,6 +137,8 @@ Offsets are zero-based. Endian arguments are `"little"`/`"le"` or `"big"`/`"be"`
 | `st.hex(data)`, `st.unhex(text)` | Hex conversion |
 | `st.json.decode(text)`, `st.json.encode(value[, pretty])`, `st.json.null` | JSON |
 | `require(name)` | Loads `name.lua` from the editor folder, then the shared library folder |
+| `st.data(path)`, `st.labels(path)` | Files shipped with the editor; `labels` tries `<dir>/<lang>/<file>` first |
+| `st.lang` | Preferred label language |
 | `print(...)`, `st.warn(...)` | Editor log |
 
 `string.pack`/`string.unpack` are available for packed structures. `io`, `os`, `debug`, `load` and `package`

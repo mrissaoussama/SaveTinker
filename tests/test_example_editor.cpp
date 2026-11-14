@@ -1,9 +1,11 @@
 #include <doctest.h>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
 #include "savetinker/checksum.hpp"
+#include "savetinker/editor_session.hpp"
 #include "savetinker/manifest.hpp"
 #include "savetinker/script_host.hpp"
 
@@ -65,4 +67,46 @@ TEST_CASE("sample editor rejects other saves") {
     st::ScriptHost host(document, context, st::directoryModuleLoader(kEditorDir));
     REQUIRE(host.loadEntry().has_value());
     CHECK_FALSE(host.detect().value());
+}
+
+TEST_CASE("sample editor builds its pages against the demo save") {
+    const auto savePath = std::filesystem::path(SAVETINKER_EXAMPLES_DIR) / "console" / "saves" / "0100000000001000" /
+                          "account-00000000000000010000000000000001" / "save.dat";
+    std::ifstream stream(savePath, std::ios::binary);
+    REQUIRE(stream);
+    st::Document document;
+    document.addFile("save.dat", st::Bytes(std::istreambuf_iterator<char>(stream), {}));
+
+    st::ScriptContext context{"switch", "0100000000001000", "Sample Game", "1.0.0", loadManifest(), "fr"};
+    st::ScriptHost host(document, context, st::directoryModuleLoader(kEditorDir));
+    host.setDataLoader(st::directoryDataLoader(kEditorDir));
+    REQUIRE(host.loadEntry().has_value());
+    REQUIRE(host.detect().value());
+
+    st::EditorSession session(host);
+    auto built = session.rebuild();
+    REQUIRE_MESSAGE(built.has_value(), (built ? "" : built.error()));
+    REQUIRE(session.topLevelLinks().size() == 3);
+    CHECK(session.currentPage().title == "Player");
+
+    const auto& nodes = session.currentPage().nodes;
+    const auto name = std::ranges::find(nodes, std::string("Name"), &st::UiNode::label);
+    REQUIRE(name != nodes.end());
+    CHECK(name->value == st::UiValue(std::string("Link")));
+
+    const auto classNode = *std::ranges::find(nodes, std::string("Class"), &st::UiNode::label);
+    REQUIRE(session.setValue(classNode, std::int64_t{1}).has_value());
+    CHECK(document.file("save.dat").read<std::uint8_t>(0x48) == 80);
+
+    REQUIRE(session.openTopLevel(session.topLevelLinks()[1].pageId).has_value());
+    const auto& bag = session.currentPage().nodes.at(1);
+    REQUIRE(bag.kind == st::WidgetKind::Section);
+    CHECK(bag.children.at(0).options.at(1).label == "Potion");
+    CHECK(bag.children.at(2).options.at(3).label == "Épée de bronze");
+
+    REQUIRE(session.openTopLevel(session.topLevelLinks()[2].pageId).has_value());
+    const auto before = session.currentPage().nodes.size();
+    const auto expansion = *std::ranges::find(session.currentPage().nodes, std::string("Expansion unlocked"), &st::UiNode::label);
+    REQUIRE(session.setValue(expansion, true).has_value());
+    CHECK(session.currentPage().nodes.size() == before + 3);
 }

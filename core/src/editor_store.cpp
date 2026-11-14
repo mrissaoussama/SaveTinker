@@ -10,6 +10,7 @@
 
 #include "game_target_json.hpp"
 #include "savetinker/checksum.hpp"
+#include "savetinker/platform.hpp"
 
 namespace st {
 
@@ -173,7 +174,7 @@ std::expected<EditorPackage, std::string> EditorStore::load(std::string_view id)
     EditorPackage package{editor->manifest, {}};
     for (const auto& entry : fs::recursive_directory_iterator(editor->directory)) {
         if (!entry.is_regular_file()) continue;
-        const auto relative = fs::relative(entry.path(), editor->directory).generic_string();
+        const auto relative = relativePath(entry.path(), editor->directory);
         if (relative == kOriginFile) continue;
         package.files.push_back({relative, readFile(entry.path())});
     }

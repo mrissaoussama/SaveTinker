@@ -152,6 +152,12 @@ std::optional<std::string> Document::redoLabel() const {
     return history_[cursor_].label;
 }
 
+std::vector<std::string> Document::appliedLabels() const {
+    std::vector<std::string> labels;
+    for (std::size_t i = 0; i < cursor_; ++i) labels.push_back(history_[i].label);
+    return labels;
+}
+
 bool Document::isDirty() const {
     return !savedCursor_ || *savedCursor_ != cursor_;
 }

@@ -21,8 +21,9 @@ add_subdirectory(core)
 add_subdirectory(platform)
 add_subdirectory(net)
 
-if(NINTENDO_SWITCH)
-    add_subdirectory(app/switch)
+option(SAVETINKER_BUILD_APP "Build the SaveTinker app" ON)
+if(SAVETINKER_BUILD_APP)
+    add_subdirectory(app)
 endif()
 
 if(SAVETINKER_BUILD_TESTS)
