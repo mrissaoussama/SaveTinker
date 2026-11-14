@@ -9,6 +9,8 @@
 namespace st {
 
 inline constexpr int kApiVersion = 1;
+// Matches every title (or every platform) in a game target, for engine-wide editors.
+inline constexpr std::string_view kAnyTitle = "*";
 
 namespace platforms {
 inline constexpr std::string_view Switch = "switch";
@@ -28,7 +30,12 @@ struct GameTarget {
     std::vector<std::string> versions;
 
     bool supportsVersion(std::string_view gameVersion) const;
+    bool generic() const { return titleId == kAnyTitle; }
+    bool matches(std::string_view platform, std::string_view titleId) const;
 };
+
+// Exact title matches win over generic ones.
+const GameTarget* findGameTarget(const std::vector<GameTarget>& games, std::string_view platform, std::string_view titleId);
 
 struct EditorManifest {
     std::string id;
@@ -40,10 +47,13 @@ struct EditorManifest {
     std::string source;
     std::string updateUrl;
     std::string entry = "main.lua";
+    // Optional PNG or JPEG inside the package, shown next to the editor's name.
+    std::string icon;
     bool gameData = false;
     std::vector<GameTarget> games;
 
     const GameTarget* findGame(std::string_view platform, std::string_view titleId) const;
+    bool generic() const;
     std::vector<std::string> platforms() const;
 };
 

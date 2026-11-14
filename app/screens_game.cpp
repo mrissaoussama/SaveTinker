@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <format>
 
 #include "app.hpp"
@@ -44,10 +45,20 @@ public:
         }
         drawSaveActions(app, *entry);
 
-        const auto installed = app.editors().forGame(entry->info.platform, titleId_);
+        auto installed = app.editors().forGame(entry->info.platform, titleId_);
+        const auto generic = std::ranges::stable_partition(installed, [&](const st::InstalledEditorInfo& editor) {
+            return !editor.manifest.findGame(entry->info.platform, titleId_)->generic();
+        });
+        const auto genericCount = static_cast<std::size_t>(std::ranges::distance(generic));
         ui::sectionTitle(tr("Editors"));
-        if (installed.empty()) ui::dimText(tr("No editor installed for this game. Use the hex editor or look in your repositories."));
-        for (const auto& editor : installed) {
+        if (installed.size() == genericCount)
+            ui::dimText(tr("No editor installed for this game. Use the hex editor or look in your repositories."));
+        for (std::size_t i = 0; i < installed.size(); ++i) {
+            const auto& editor = installed[i];
+            if (i == installed.size() - genericCount) {
+                ui::sectionTitle(tr("Generic editors"));
+                ui::dimText(tr("Made for a game engine or save format rather than this game. They check the save when opened."));
+            }
             const auto* game = editor.manifest.findGame(entry->info.platform, titleId_);
             const bool supported = !game || entry->info.displayVersion.empty() || game->supportsVersion(entry->info.displayVersion);
             if (ui::row(("ed-" + editor.manifest.id).c_str(), editor.manifest.name,
@@ -65,7 +76,9 @@ public:
             ui::sectionTitle(tr("Available in your repositories"));
             for (const auto& match : matches) {
                 const std::string id = match.repo->url + "/" + match.editor->id;
-                const std::string value = (match.versionSupported ? match.repo->index.name : trf("other version  \xC2\xB7  {}", match.repo->index.name));
+                std::string value = match.versionSupported ? match.repo->index.name : trf("other version  \xC2\xB7  {}", match.repo->index.name);
+                if (match.editor->needsNewerApp()) value = tr("needs a newer SaveTinker");
+                else if (match.editor->findGame(entry->info.platform, titleId_)->generic()) value = trf("generic  \xC2\xB7  {}", value);
                 if (ui::row(id.c_str(), match.editor->name + "  v" + match.editor->version, value).activated)
                     app.push(makeRepoEditorScreen(match.repo->url, match.editor->id));
             }

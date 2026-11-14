@@ -12,10 +12,7 @@ namespace st {
 using namespace json_fields;
 
 const GameTarget* RepoEditorEntry::findGame(std::string_view platform, std::string_view titleId) const {
-    const auto wanted = normalizeTitleId(titleId);
-    for (const auto& game : games)
-        if (game.platform == platform && game.titleId == wanted) return &game;
-    return nullptr;
+    return findGameTarget(games, platform, titleId);
 }
 
 std::string resolveUrl(std::string_view baseUrl, std::string_view reference) {
@@ -43,6 +40,7 @@ RepoEditorEntry parseEditorEntry(const nlohmann::json& object, std::string_view 
     entry.description = optionalString(object, "description");
     entry.version = requiredString(object, "version");
     if (!Version::parse(entry.version)) throw FieldError("invalid version for " + entry.id);
+    entry.apiVersion = optionalInt(object, "api_version", kApiVersion);
     entry.authors = stringList(object, "authors");
     entry.source = optionalString(object, "source");
     entry.games = parseGameTargets(object);

@@ -104,21 +104,29 @@ public:
         const auto& links = session_->topLevelLinks();
         const bool sidebar = !links.empty();
         if (sidebar) {
-            ImGui::BeginChild("##pages", ImVec2(ImGui::GetContentRegionAvail().x * 0.28f, 0));
+            const int maxLines = 2;
+            ImGui::BeginChild("##pages", ImVec2(sidebarWidth(links), 0));
             ui::holdFocusRequests(true);
             const std::string currentTop = session_->breadcrumbs().empty() ? "" : session_->breadcrumbs().front().id;
             bool sidebarFocused = false;
-            // A page in the list opens it and moves into its fields; right does the same for the current page.
+            // Focusing a page shows it on the right; A or right moves into its fields.
             auto pageRow = [&](const char* id, const std::string& label, const std::string& pageId) {
                 const bool current = pageId == currentTop;
                 if (current && focusSidebar_) {
                     ImGui::SetKeyboardFocusHere();
                     ImGui::SetNavCursorVisible(true);
                     ImGui::SetScrollHereY(0.5f);
+                    ui::cancelFocusRequest();
                     focusSidebar_ = false;
                 }
-                const auto result = ui::row(id, label, "", ui::color::TextDim, current);
+                const auto result = ui::wrappedRow(id, label, current, maxLines);
                 sidebarFocused = sidebarFocused || result.focused;
+                if (result.focused && !current && !pending_) {
+                    pending_ = [this, &app, pageId] {
+                        report(app, session_->openTopLevel(pageId));
+                        previewed_ = true;
+                    };
+                }
                 if (result.activated) {
                     pending_ = [this, &app, pageId, current] {
                         if (!current) report(app, session_->openTopLevel(pageId));
@@ -143,6 +151,10 @@ public:
             std::string path;
             for (const auto& crumb : crumbs) path += (path.empty() ? "" : "  \xE2\x80\xBA  ") + crumb.title;
             ui::dimText(path);
+        }
+        if (previewed_) {
+            ImGui::SetScrollY(0);
+            previewed_ = false;
         }
         if (pageChanged_) {
             ImGui::SetScrollY(0);
@@ -215,8 +227,18 @@ private:
         if (auto built = session_->rebuild(); !built) {
             error_ = built.error();
             session_.reset();
+            return;
         }
-        pageChanged_ = true;
+        if (session_->topLevelLinks().empty()) pageChanged_ = true;
+        else focusSidebar_ = true;
+    }
+
+    float sidebarWidth(const std::vector<UiNode>& links) const {
+        float widest = hasRootContent() ? ImGui::CalcTextSize(session_->root().title.c_str()).x : 0.0f;
+        for (const auto& link : links) widest = std::max(widest, ImGui::CalcTextSize(link.label.c_str()).x);
+        const float padding = ImGui::GetStyle().FramePadding.x * 4 + ImGui::GetStyle().ScrollbarSize;
+        const float available = ImGui::GetContentRegionAvail().x;
+        return std::clamp(widest + padding, ImGui::GetFontSize() * 6, available * 0.3f);
     }
 
     bool hasRootContent() const {
@@ -593,7 +615,8 @@ private:
     std::string detectReason_;
     bool reviewing_ = false;
     bool showLog_ = false;
-    bool pageChanged_ = true;
+    bool pageChanged_ = false;
+    bool previewed_ = false;
     std::string focusedHelp_;
     bool focusedHasActions_ = false;
     bool focusSidebar_ = false;

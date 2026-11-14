@@ -15,6 +15,7 @@ struct RepoEditorEntry {
     std::string name;
     std::string description;
     std::string version;
+    int apiVersion = kApiVersion;
     std::vector<std::string> authors;
     std::string source;
     std::vector<GameTarget> games;
@@ -25,6 +26,7 @@ struct RepoEditorEntry {
     std::string updated;
 
     const GameTarget* findGame(std::string_view platform, std::string_view titleId) const;
+    bool needsNewerApp() const { return apiVersion > kApiVersion; }
 };
 
 struct RepoIndex {

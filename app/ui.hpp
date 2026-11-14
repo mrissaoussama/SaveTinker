@@ -31,6 +31,8 @@ float rowHeight();
 
 // The next row drawn takes keyboard/controller focus.
 void focusNextRow();
+// Drops a pending focusNextRow request, for screens that place focus themselves.
+void cancelFocusRequest();
 // While held, rows leave a pending focus request for later rows (for side panels drawn first).
 void holdFocusRequests(bool hold);
 // Row focused outside popups during the last frame, and a way to focus it again after returning to a screen.
@@ -56,6 +58,9 @@ struct RowResult {
 
 RowResult row(const char* id, const std::string& label, const std::string& value = {}, ImU32 valueColor = color::TextDim,
               bool selected = false, float height = 0.0f);
+
+// Row whose label wraps onto up to `maxLines` lines and is cut after that.
+RowResult wrappedRow(const char* id, const std::string& label, bool selected, int maxLines);
 
 void toggleSwitch(ImVec2 rightEdge, float rowHeight, bool on);
 void badge(const std::string& text, ImU32 color);

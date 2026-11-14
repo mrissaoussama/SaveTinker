@@ -59,8 +59,16 @@ std::vector<ValidationIssue> validatePackage(const EditorPackage& package) {
 
     if (!package.find(manifest.entry))
         issues.push_back({Severity::Error, manifest.entry, "entry script is missing"});
+    if (!manifest.icon.empty()) {
+        const auto* icon = package.find(manifest.icon);
+        if (!icon) issues.push_back({Severity::Error, manifest.icon, "icon file is missing"});
+        else if (icon->content.size() > limits.maxIconSize)
+            issues.push_back({Severity::Warning, manifest.icon, "icon is larger than 64 KB, keep it small (128x128 is enough)"});
+        else if (!manifest.icon.ends_with(".png") && !manifest.icon.ends_with(".jpg"))
+            issues.push_back({Severity::Error, manifest.icon, "icon must be a .png or .jpg"});
+    }
     for (const auto& game : manifest.games)
-        if (game.platform != platforms::Switch && game.platform != platforms::N3ds && game.platform != platforms::Nds &&
+        if (game.platform != kAnyTitle && game.platform != platforms::Switch && game.platform != platforms::N3ds && game.platform != platforms::Nds &&
             game.platform != platforms::Gba)
             issues.push_back({Severity::Warning, "manifest.json", "unknown platform \"" + game.platform + "\""});
     if (manifest.source.empty())
@@ -97,6 +105,7 @@ PackedEditor packEditor(const EditorPackage& package, std::string_view downloadF
     entry.name = manifest.name;
     entry.description = manifest.description;
     entry.version = manifest.version;
+    entry.apiVersion = manifest.apiVersion;
     entry.authors = manifest.authors;
     entry.source = manifest.source;
     entry.games = manifest.games;
@@ -140,6 +149,7 @@ std::string manifestToJson(const EditorManifest& manifest) {
     putIfSet(root, "source", manifest.source);
     putIfSet(root, "update_url", manifest.updateUrl);
     if (manifest.entry != "main.lua") root["entry"] = manifest.entry;
+    putIfSet(root, "icon", manifest.icon);
     if (manifest.gameData) root["game_data"] = true;
     root["games"] = gamesToJson(manifest.games);
     return root.dump(2) + "\n";
@@ -157,6 +167,7 @@ std::string repoIndexToJson(const RepoIndex& index) {
         Json item{{"id", editor.id}, {"name", editor.name}};
         putIfSet(item, "description", editor.description);
         item["version"] = editor.version;
+        item["api_version"] = editor.apiVersion;
         putIfSet(item, "authors", editor.authors);
         putIfSet(item, "source", editor.source);
         item["games"] = gamesToJson(editor.games);

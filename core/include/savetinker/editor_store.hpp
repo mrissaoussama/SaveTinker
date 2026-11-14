@@ -30,6 +30,7 @@ struct PackageLimits {
     std::size_t maxFiles = 512;
     std::uint64_t maxFileSize = 16u << 20;
     std::uint64_t maxTotalSize = 32u << 20;
+    std::uint64_t maxIconSize = 64u << 10;
 };
 
 std::expected<std::vector<PackageFile>, std::string> readZip(ByteView zip, const PackageLimits& limits = {});

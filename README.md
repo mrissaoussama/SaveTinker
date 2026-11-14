@@ -107,6 +107,19 @@ An editor is a folder with `manifest.json` and Lua files.
 }
 ```
 
+Optional keys: `icon` (a PNG or JPEG in the folder, 64 KB at most), `description`, `authors`, `game_data`.
+
+A `title_id` of `"*"` makes a generic editor, offered for every game on that platform (`"platform": "*"` for every
+console). Generic editors are for engine or format based saves such as Unity JSON or Unreal GVAS; they are listed
+apart from game editors and their `detect` decides whether a save fits. A game target with a real title id wins
+over a generic one in the same manifest.
+
+`api_version` is the editor API the scripts were written for. Additions to the API keep the number; a change that
+would break existing scripts raises it, and the app keeps running editors written for older numbers. A build refuses
+editors that ask for a newer number than it knows, and repositories carry the number so the app can say an update is
+needed before downloading. `st.api_version` gives the running app's number for scripts that want to use newer calls
+only when present.
+
 `versions` accepts `*`, exact versions, `>=`, `>`, `<=`, `<` and ranges like `1.0.0 - 1.2.0`. When the installed game
 version is outside the list, the app warns and lets the user open the editor anyway; scripts that know a
 version breaks them can refuse in `detect`. On 3DS, editors can also target `"platform": "nds"` for DS cartridges

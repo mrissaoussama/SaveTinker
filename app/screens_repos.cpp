@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <format>
+#include <fstream>
+#include <optional>
 
 #include "app.hpp"
 #include "i18n.hpp"
@@ -18,7 +20,8 @@ void drawGames(const std::vector<st::GameTarget>& games) {
         std::string versions;
         for (const auto& version : game.versions) versions += (versions.empty() ? "" : ", ") + version;
         ImGui::BulletText("%s  %s  %s", st::platformDisplayName(game.platform).c_str(),
-                          (game.name.empty() ? game.titleId : game.name + " (" + game.titleId + ")").c_str(),
+                          game.generic() ? (game.name.empty() ? tr("Any game") : trf("Any game ({})", game.name)).c_str()
+                          : (game.name.empty() ? game.titleId : game.name + " (" + game.titleId + ")").c_str(),
                           versions.empty() ? "" : ("versions " + versions).c_str());
     }
 }
@@ -83,6 +86,13 @@ public:
         }
         const auto& manifest = editor->manifest;
         name_ = manifest.name;
+        if (!manifest.icon.empty()) {
+            if (!iconBytes_) iconBytes_ = readIcon(editor->directory / manifest.icon);
+            ui::iconTile(app.textures().get("editor:" + manifest.id + ":" + manifest.version, *iconBytes_), manifest.name,
+                         ImGui::GetFontSize() * 4);
+            ImGui::SameLine();
+        }
+        ImGui::BeginGroup();
         ImGui::TextUnformatted((manifest.name + "   v" + manifest.version).c_str());
         if (!manifest.description.empty()) ui::dimText(manifest.description);
         if (!manifest.authors.empty()) {
@@ -92,6 +102,7 @@ public:
         }
         const auto* repo = findRepo(app, editor->repoUrl);
         ui::dimText(editor->repoUrl.empty() ? tr("Installed manually") : trf("From {}", repo ? repo->index.name : editor->repoUrl));
+        ImGui::EndGroup();
 
         ui::sectionTitle(tr("Actions"));
         if (ui::row("##inspect", tr("Inspect code")).activated) {
@@ -119,8 +130,15 @@ public:
     }
 
 private:
+    static st::Bytes readIcon(const std::filesystem::path& path) {
+        std::ifstream stream(path, std::ios::binary);
+        st::Bytes bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        return bytes.size() <= st::PackageLimits{}.maxIconSize ? bytes : st::Bytes{};
+    }
+
     std::string id_;
     std::string name_ = tr("Editor");
+    std::optional<st::Bytes> iconBytes_;
 };
 
 class RepoScreen : public Screen {

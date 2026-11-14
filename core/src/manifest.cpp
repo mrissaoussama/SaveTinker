@@ -17,6 +17,7 @@ std::string platformDisplayName(std::string_view platformId) {
     if (platformId == platforms::Nds) return "Nintendo DS";
     if (platformId == platforms::Gba) return "Game Boy Advance";
     if (platformId == "file") return "Save file";
+    if (platformId == kAnyTitle) return "Any console";
     return std::string(platformId);
 }
 
@@ -36,11 +37,27 @@ bool GameTarget::supportsVersion(std::string_view gameVersion) const {
     return std::ranges::any_of(versions, [&](const std::string& pattern) { return versionMatches(pattern, gameVersion); });
 }
 
+bool GameTarget::matches(std::string_view wantedPlatform, std::string_view wantedTitle) const {
+    if (platform != kAnyTitle && platform != wantedPlatform) return false;
+    return generic() || titleId == normalizeTitleId(wantedTitle);
+}
+
+const GameTarget* findGameTarget(const std::vector<GameTarget>& games, std::string_view platform, std::string_view titleId) {
+    const GameTarget* fallback = nullptr;
+    for (const auto& game : games) {
+        if (!game.matches(platform, titleId)) continue;
+        if (!game.generic()) return &game;
+        if (!fallback) fallback = &game;
+    }
+    return fallback;
+}
+
 const GameTarget* EditorManifest::findGame(std::string_view platform, std::string_view titleId) const {
-    const auto wanted = normalizeTitleId(titleId);
-    for (const auto& game : games)
-        if (game.platform == platform && game.titleId == wanted) return &game;
-    return nullptr;
+    return findGameTarget(games, platform, titleId);
+}
+
+bool EditorManifest::generic() const {
+    return std::ranges::any_of(games, &GameTarget::generic);
 }
 
 std::vector<std::string> EditorManifest::platforms() const {
@@ -55,8 +72,10 @@ GameTarget parseGameTarget(const nlohmann::json& object) {
     GameTarget game;
     game.platform = requiredString(object, "platform");
     const auto titleId = requiredString(object, "title_id");
-    if (!isValidTitleId(titleId)) throw FieldError("invalid title_id \"" + titleId + "\" (expected 16 hex digits)");
+    if (titleId != kAnyTitle && !isValidTitleId(titleId))
+        throw FieldError("invalid title_id \"" + titleId + "\" (expected 16 hex digits or \"*\")");
     game.titleId = normalizeTitleId(titleId);
+    if (game.platform == kAnyTitle && !game.generic()) throw FieldError("platform \"*\" needs title_id \"*\"");
     game.name = optionalString(object, "name");
     game.versions = stringList(object, "versions");
     return game;
@@ -98,6 +117,9 @@ std::expected<EditorManifest, std::string> parseManifest(std::string_view json) 
         manifest.source = optionalString(root, "source");
         manifest.updateUrl = optionalString(root, "update_url");
         manifest.entry = optionalString(root, "entry", "main.lua");
+        manifest.icon = optionalString(root, "icon");
+        if (!manifest.icon.empty() && (manifest.icon.starts_with('/') || manifest.icon.find("..") != std::string::npos))
+            return std::unexpected("\"icon\" must be a path inside the editor folder");
         if (auto gameData = root.find("game_data"); gameData != root.end()) {
             if (!gameData->is_boolean()) return std::unexpected("\"game_data\" must be true or false");
             manifest.gameData = gameData->get<bool>();

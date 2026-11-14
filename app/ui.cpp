@@ -55,6 +55,11 @@ void focusNextRow() {
     focusQueued = true;
 }
 
+void cancelFocusRequest() {
+    focusQueued = false;
+    focusRequested = false;
+}
+
 void holdFocusRequests(bool hold) {
     focusHeld = hold;
 }
@@ -152,6 +157,22 @@ RowResult row(const char* id, const std::string& label, const std::string& value
     draw->AddText(ImVec2(start.x + padding, textY), color::Text, label.c_str());
     draw->PopClipRect();
     if (!value.empty()) draw->AddText(ImVec2(start.x + width - valueWidth - padding, textY), valueColor, value.c_str());
+    return result;
+}
+
+RowResult wrappedRow(const char* id, const std::string& label, bool selected, int maxLines) {
+    const float padding = ImGui::GetStyle().FramePadding.x * 1.5f;
+    const float wrapWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x - padding * 2);
+    const float lineHeight = ImGui::GetTextLineHeight();
+    const float textHeight = ImGui::CalcTextSize(label.c_str(), nullptr, false, wrapWidth).y;
+    const float shown = std::min(textHeight, lineHeight * static_cast<float>(maxLines));
+    const float height = std::max(rowHeight(), shown + ImGui::GetFontSize() * 1.3f);
+    const ImVec2 start = ImGui::GetCursorScreenPos();
+    const auto result = row(id, "", {}, color::TextDim, selected, height);
+    const ImVec2 textPos(start.x + padding, start.y + (height - shown) * 0.5f);
+    const ImVec4 clip(textPos.x, textPos.y, textPos.x + wrapWidth, textPos.y + shown);
+    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), textPos, color::Text, label.c_str(), nullptr,
+                                        wrapWidth, &clip);
     return result;
 }
 

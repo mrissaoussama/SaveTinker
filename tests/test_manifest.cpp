@@ -52,3 +52,23 @@ TEST_CASE("platform names") {
     CHECK(st::platformDisplayName("3ds") == "Nintendo 3DS");
     CHECK(st::platformDisplayName("wiiu") == "wiiu");
 }
+
+TEST_CASE("generic editors match every title, exact targets win") {
+    const auto manifest = st::parseManifest(R"({"id":"x.unity","name":"Unity saves","version":"1.0.0","icon":"icon.png","games":[
+        {"platform":"switch","title_id":"*","name":"Unity games"},
+        {"platform":"switch","title_id":"0100ABCD00000000","versions":["1.0"]}]})");
+    REQUIRE(manifest.has_value());
+    CHECK(manifest->generic());
+    CHECK(manifest->icon == "icon.png");
+    CHECK(manifest->findGame("switch", "0100FFFF00000000")->generic());
+    CHECK_FALSE(manifest->findGame("switch", "0100abcd00000000")->generic());
+    CHECK(manifest->findGame("3ds", "0004000000123400") == nullptr);
+
+    const auto anywhere = st::parseManifest(R"({"id":"x.any","name":"n","version":"1.0","games":[{"platform":"*","title_id":"*"}]})");
+    REQUIRE(anywhere.has_value());
+    CHECK(anywhere->findGame("3ds", "0004000000123400") != nullptr);
+    CHECK(st::parseManifest(R"({"id":"x","name":"n","version":"1.0","games":[{"platform":"*","title_id":"0100ABCD00000000"}]})")
+              .error().find("platform") != std::string::npos);
+    CHECK(st::parseManifest(R"({"id":"x","name":"n","version":"1.0","icon":"../up.png","games":[{"platform":"*","title_id":"*"}]})")
+              .error().find("icon") != std::string::npos);
+}
