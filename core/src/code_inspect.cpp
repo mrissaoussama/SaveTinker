@@ -175,7 +175,7 @@ std::vector<Token> LuaHighlighter::line(std::string_view text) {
 }
 
 std::vector<CodeFinding> summarizeScript(std::string_view code) {
-    static const std::regex writes(R"(:(set|setBit|setBytes|setStr|setContent|splice)\s*\()");
+    static const std::regex writes(R"(:(set|setBit|setBytes|setStr|setContent|splice|field|flag|text)\s*\()");
     static const std::regex requires_(R"(require\s*\(?\s*["']([^"']+)["'])");
     static const std::regex data(R"(st\.(data|labels)\s*\(\s*["']([^"']+)["'])");
 

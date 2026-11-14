@@ -55,6 +55,9 @@ public:
                     .activated)
                 app.push(makeEditorDetailScreen(editor.manifest.id));
         }
+        if (ui::row("##creator", "Create an editor", hasEditorDraft(app, titleId_)
+                        ? std::format("draft, {} fields", editorDraft(app, titleId_).fields.size()) : "").activated)
+            app.push(makeDraftScreen(titleId_));
 
         const auto matches = app.catalog().findEditors(entry->info.platform, titleId_, entry->info.displayVersion);
         if (!matches.empty()) {

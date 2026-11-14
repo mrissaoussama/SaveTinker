@@ -10,6 +10,7 @@ set(APP_SOURCES
     save_flow.cpp
     screens_editor.cpp
     screens_game.cpp
+    screens_creator.cpp
     screens_hex.cpp
     screens_main.cpp
     screens_repos.cpp

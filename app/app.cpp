@@ -106,6 +106,7 @@ std::string App::language() const {
 }
 
 void App::push(std::unique_ptr<Screen> screen) {
+    if (!screens_.empty()) screens_.back()->savedFocus = ui::focusedRow();
     screens_.push_back(std::move(screen));
     ui::focusNextRow();
 }
@@ -114,7 +115,7 @@ void App::pop() {
     if (screens_.size() <= 1) return;
     retired_.push_back(std::move(screens_.back()));
     screens_.pop_back();
-    ui::focusNextRow();
+    ui::restoreFocus(screens_.back()->savedFocus);
 }
 
 void App::replaceTop(std::unique_ptr<Screen> screen) {

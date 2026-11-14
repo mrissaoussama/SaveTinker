@@ -26,6 +26,7 @@ const std::map<std::string, ImGuiKey>& buttonKeys() {
         {"ZL", ImGuiKey_GamepadL2},      {"ZR", ImGuiKey_GamepadR2},       {"PLUS", ImGuiKey_GamepadStart},
         {"MINUS", ImGuiKey_GamepadBack}, {"UP", ImGuiKey_GamepadDpadUp},   {"DOWN", ImGuiKey_GamepadDpadDown},
         {"LEFT", ImGuiKey_GamepadDpadLeft}, {"RIGHT", ImGuiKey_GamepadDpadRight}, {"RSDOWN", ImGuiKey_GamepadRStickDown},
+        {"ENTER", ImGuiKey_Enter},       {"BACKSPACE", ImGuiKey_Backspace},
     };
     return keys;
 }
@@ -48,6 +49,7 @@ std::optional<Autopilot> Autopilot::load(const std::filesystem::path& script, st
         if (command == "press") autopilot.steps_.push_back({Step::Kind::Press, argument, std::max(1, count)});
         else if (command == "wait") autopilot.steps_.push_back({Step::Kind::Wait, {}, std::max(1, std::atoi(argument.c_str()))});
         else if (command == "shot") autopilot.steps_.push_back({Step::Kind::Shot, argument, 1});
+        else if (command == "type") autopilot.steps_.push_back({Step::Kind::Type, line.size() > 5 ? line.substr(5) : "", 1});
         else if (command == "quit") autopilot.steps_.push_back({Step::Kind::Quit, {}, 1});
     }
     return autopilot;
@@ -79,6 +81,11 @@ bool Autopilot::beforeFrame() {
             waitFrames_ = 2;
             return true;
         case Step::Kind::Quit: return false;
+        case Step::Kind::Type:
+            io.AddInputCharactersUTF8(step.argument.c_str());
+            ++index_;
+            waitFrames_ = 2;
+            return true;
         case Step::Kind::Press: {
             const auto found = buttonKeys().find(step.argument);
             if (found == buttonKeys().end()) {

@@ -53,12 +53,14 @@ local layout = require("layout")
 local items = st.labels("labels/items.json")
 file:set(0, "u32", 1)
 -- file:setBytes(0, "x")
+page:int{ label = "Gold", bind = file:field(8, "u32") }
 )");
-    REQUIRE(findings.size() == 3);
+    REQUIRE(findings.size() == 4);
     CHECK(findings[0].kind == st::CodeFinding::Kind::Requires);
     CHECK(findings[0].detail == "layout");
     CHECK(findings[1].kind == st::CodeFinding::Kind::ReadsData);
     CHECK(findings[1].detail == "labels/items.json");
     CHECK(findings[2].kind == st::CodeFinding::Kind::Writes);
     CHECK(findings[2].line == 4);
+    CHECK(findings[3].detail == "field");
 }

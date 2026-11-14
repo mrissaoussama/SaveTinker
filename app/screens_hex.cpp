@@ -52,6 +52,7 @@ public:
         }
         const auto& buffer = document_->file(file());
         if (!app.modalOpen()) handleInput(app, buffer.size());
+        collectMarkedFields(app);
 
         ui::dimText(std::format("{}   {}   {} of {}", file(), ui::formatSize(buffer.size()),
                                 fileIndex_ + 1, files_.size()) +
@@ -132,8 +133,10 @@ private:
                     const ImVec2 cell(origin.x + offsetWidth + column * byteWidth + (column >= 8 ? charWidth * 0.6f : 0), origin.y);
                     const bool atCursor = index == cursor_;
                     const bool differs = isDifferent(index);
+                    const bool marked = markedField(index) != nullptr;
                     if (atCursor) draw->AddRectFilled(ImVec2(cell.x - 2, cell.y - 1), ImVec2(cell.x + charWidth * 2 + 2, cell.y + lineHeight - 3), ui::color::Accent, 3);
                     else if (differs) draw->AddRectFilled(ImVec2(cell.x - 2, cell.y - 1), ImVec2(cell.x + charWidth * 2 + 2, cell.y + lineHeight - 3), IM_COL32(120, 70, 20, 255), 3);
+                    else if (marked) draw->AddRectFilled(ImVec2(cell.x - 2, cell.y - 1), ImVec2(cell.x + charWidth * 2 + 2, cell.y + lineHeight - 3), IM_COL32(40, 70, 130, 255), 3);
                     const auto text = std::format("{:02X}", value);
                     const ImU32 tint = atCursor ? IM_COL32(15, 20, 25, 255) : value == 0 ? ui::color::TextDim : ui::color::Text;
                     draw->AddText(cell, tint, text.c_str());
@@ -152,6 +155,11 @@ private:
 
     void drawInspector(const st::ByteBuffer& buffer) {
         ui::sectionTitle(std::format("Offset 0x{:X}", cursor_));
+        if (const auto* field = markedField(cursor_)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::color::Accent);
+            ImGui::TextUnformatted((field->label + " (" + field->type + ")").c_str());
+            ImGui::PopStyleColor();
+        }
         auto line = [&](const char* name, const std::string& value) {
             ImGui::PushStyleColor(ImGuiCol_Text, ui::color::TextDim);
             ImGui::TextUnformatted(name);
@@ -218,6 +226,10 @@ private:
             compare_.reset();
             differences_.clear();
         }
+        if (item("##mark", "Mark field here")) markField(app);
+        if (item("##signature", "Use bytes here as save signature")) useAsSignature(app);
+        if (item("##draft", "Editor creator", std::format("{} fields", editorDraft(app, target_.save.titleId).fields.size())))
+            app.push(makeDraftScreen(target_.save.titleId));
         if (item("##compare", "Compare with latest backup")) compareWithBackup(app);
         if (compare_) {
             if (item("##nextdiff", "Next difference")) jumpToDifference(true);
@@ -228,6 +240,49 @@ private:
             }
         }
         ImGui::EndPopup();
+    }
+
+    void collectMarkedFields(App& app) {
+        marked_.clear();
+        for (const auto& field : editorDraft(app, target_.save.titleId).fields)
+            if (field.file == file()) marked_.push_back(field);
+    }
+
+    const st::TemplateField* markedField(std::size_t index) const {
+        for (const auto& field : marked_)
+            if (index >= field.offset && index < field.offset + st::templateFieldSize(field)) return &field;
+        return nullptr;
+    }
+
+    void markField(App& app) {
+        const auto& fields = editorDraft(app, target_.save.titleId).fields;
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+            const auto& field = fields[i];
+            if (field.file == file() && cursor_ >= field.offset && cursor_ < field.offset + st::templateFieldSize(field))
+                return app.push(makeFieldScreen(target_.save.titleId, field, document_->file(file()).bytes(), i));
+        }
+        st::TemplateField field;
+        field.file = file();
+        field.offset = cursor_;
+        app.push(makeFieldScreen(target_.save.titleId, std::move(field), document_->file(file()).bytes()));
+    }
+
+    void useAsSignature(App& app) {
+        app.promptText({"Signature length in bytes", "4", TextKind::Number, 3}, [this](App& app, std::string text) {
+            std::size_t length = 0;
+            try {
+                length = std::stoul(text);
+            } catch (const std::exception&) {
+            }
+            const auto& buffer = document_->file(file());
+            if (length == 0 || length > 64 || cursor_ + length > buffer.size()) return app.toast("Use 1 to 64 bytes inside the file", true);
+            auto& draft = editorDraft(app, target_.save.titleId);
+            draft.detectFile = file();
+            draft.magicOffset = cursor_;
+            draft.magic = buffer.readBytes(cursor_, length);
+            storeEditorDraft(app, target_.save.titleId);
+            app.toast("Signature set to " + st::toHex(draft.magic));
+        });
     }
 
     void editAtCursor(App& app) {
@@ -330,6 +385,7 @@ private:
     std::string lastSearchText_;
     std::optional<st::Bytes> compare_;
     std::vector<st::ByteRange> differences_;
+    std::vector<st::TemplateField> marked_;
 };
 
 }

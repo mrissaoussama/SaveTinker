@@ -33,6 +33,9 @@ float rowHeight();
 void focusNextRow();
 // While held, rows leave a pending focus request for later rows (for side panels drawn first).
 void holdFocusRequests(bool hold);
+// Row focused outside popups during the last frame, and a way to focus it again after returning to a screen.
+ImGuiID focusedRow();
+void restoreFocus(ImGuiID rowId);
 
 // Rows that react to left/right call this every frame. It returns -1, 0 or 1. Focus is taken from the
 // previous frame because a left/right press makes navigation briefly move focus during that frame.

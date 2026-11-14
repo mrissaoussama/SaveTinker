@@ -12,6 +12,7 @@
 
 #include "savetinker/backup.hpp"
 #include "savetinker/editor_store.hpp"
+#include "savetinker/editor_template.hpp"
 #include "savetinker/network.hpp"
 #include "savetinker/platform.hpp"
 #include "savetinker/repository.hpp"
@@ -38,6 +39,8 @@ public:
     virtual std::vector<Hint> hints(const App& app) const = 0;
     // Return false to keep the screen open (for example to ask about unsaved changes).
     virtual bool requestClose(App&) { return true; }
+
+    ImGuiID savedFocus = 0;
 };
 
 struct TitleEntry {
@@ -177,5 +180,14 @@ std::unique_ptr<Screen> makeRepoEditorScreen(const std::string& repoUrl, const s
 std::unique_ptr<Screen> makeInspectScreen(std::string title, st::EditorPackage package,
                                           std::optional<st::EditorPackage> previous,
                                           std::function<void(App&)> installAction);
+
+// Editor creator drafts are kept per title in <data>/drafts/<title id>.json.
+st::EditorTemplate& editorDraft(App& app, const std::string& titleId);
+void storeEditorDraft(App& app, const std::string& titleId);
+void discardEditorDraft(App& app, const std::string& titleId);
+bool hasEditorDraft(App& app, const std::string& titleId);
+std::unique_ptr<Screen> makeFieldScreen(const std::string& titleId, st::TemplateField field, st::Bytes content,
+                                        std::optional<std::size_t> index = std::nullopt);
+std::unique_ptr<Screen> makeDraftScreen(const std::string& titleId);
 
 }

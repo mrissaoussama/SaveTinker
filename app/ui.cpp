@@ -1,6 +1,7 @@
 #include "ui.hpp"
 
 #include <format>
+#include <imgui_internal.h>
 
 #include "savetinker/qr.hpp"
 
@@ -42,6 +43,9 @@ namespace {
 bool focusRequested = false;
 bool focusQueued = false;
 bool focusHeld = false;
+ImGuiID restoreTarget = 0;
+int restoreFrames = 0;
+ImGuiID lastFocused = 0;
 ImGuiID adjustableNow = 0;
 ImGuiID adjustableBefore = 0;
 }
@@ -54,6 +58,18 @@ void holdFocusRequests(bool hold) {
     focusHeld = hold;
 }
 
+ImGuiID focusedRow() {
+    return lastFocused;
+}
+
+void restoreFocus(ImGuiID rowId) {
+    if (!rowId) return focusNextRow();
+    restoreTarget = rowId;
+    restoreFrames = 2;
+    focusQueued = false;
+    focusRequested = false;
+}
+
 int horizontalInput(ImGuiID rowId, bool focused) {
     if (focused) adjustableNow = rowId;
     if (rowId != adjustableBefore && !focused) return 0;
@@ -63,6 +79,10 @@ int horizontalInput(ImGuiID rowId, bool focused) {
 }
 
 void beginFrame() {
+    if (restoreTarget && --restoreFrames < 0) {
+        restoreTarget = 0;
+        focusQueued = true;
+    }
     focusRequested = focusRequested || focusQueued;
     focusQueued = false;
     adjustableBefore = adjustableNow;
@@ -83,15 +103,18 @@ RowResult row(const char* id, const std::string& label, const std::string& value
     ImGui::PushStyleColor(ImGuiCol_Header, color::AccentDim);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, color::PanelHover);
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, color::AccentDim);
-    if (focusRequested && !focusHeld) {
+    const bool restoring = restoreTarget && ImGui::GetID("##row") == restoreTarget;
+    if (restoring || (focusRequested && !focusHeld && !restoreTarget)) {
         ImGui::SetKeyboardFocusHere();
         ImGui::SetNavCursorVisible(true);
         focusRequested = false;
+        restoreTarget = 0;
     }
     result.activated = ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowOverlap, ImVec2(width, rowH));
     ImGui::PopStyleColor(3);
     result.id = ImGui::GetItemID();
     result.focused = ImGui::IsItemFocused();
+    if (result.focused && !(ImGui::GetCurrentWindow()->RootWindow->Flags & ImGuiWindowFlags_Popup)) lastFocused = result.id;
     result.hovered = ImGui::IsItemHovered();
     ImGui::PopID();
 

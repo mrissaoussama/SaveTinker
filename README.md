@@ -39,6 +39,33 @@ shot game-screen
 quit
 ```
 
+`type <text>` enters text into an open prompt and `press ENTER` confirms it.
+
+## Command line tool
+
+The desktop build also produces `savetinker-cli` for editor authors and repository maintainers:
+
+```sh
+savetinker-cli validate my-editor/                     # Lua syntax, JSON files, manifest
+savetinker-cli run my-editor/ save-folder/             # prints every page as text
+savetinker-cli run my-editor/ save.dat --set "Player/Gold=999" --out edited/
+savetinker-cli diff save-folder/ edited/               # byte ranges that differ
+savetinker-cli new my-editor/ --id me.game --name "Game" --title 0100ABCD00000000
+savetinker-cli pack editors/ site/ --name "My Editors" # zips + repo.json with hashes
+savetinker-cli inspect my-editor/main.lua              # writes, modules and data files
+```
+
+`pack` keeps the repository name and changelogs from an existing `repo.json` and refuses to write it when
+any editor has errors.
+
+## Editor creator
+
+Without a computer, an editor can be started from the hex editor: open its menu (Y), choose
+**Mark field here** for each value, and optionally **Use bytes here as save signature** so the editor only
+opens matching saves. **Editor creator** (also on the game screen) shows the draft, previews the generated
+Lua and installs it. Drafts are kept in `drafts/<title id>.json` and can be turned into an editor folder
+with `savetinker-cli new <folder> --template drafts/<title id>.json`.
+
 ## Layout
 
 | Path | Contents |

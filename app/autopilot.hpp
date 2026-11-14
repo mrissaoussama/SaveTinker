@@ -20,7 +20,7 @@ public:
 
 private:
     struct Step {
-        enum class Kind { Press, Wait, Shot, Quit } kind;
+        enum class Kind { Press, Type, Wait, Shot, Quit } kind;
         std::string argument;
         int count = 1;
     };
