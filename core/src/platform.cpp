@@ -92,6 +92,10 @@ void DirectorySaveMount::commit() {
     if (commitHook_) commitHook_();
 }
 
+std::expected<std::shared_ptr<GameData>, std::string> Platform::openGameData(const std::string&) {
+    return std::unexpected("reading game files is not supported on this console");
+}
+
 std::string relativePath(const fs::path& path, const fs::path& root) {
     const std::string full = path.generic_string();
     std::string prefix = root.generic_string();

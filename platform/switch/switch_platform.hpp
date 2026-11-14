@@ -19,6 +19,7 @@ public:
     std::vector<SaveInfo> saves() override;
     std::optional<std::string> runningTitleId() override;
     std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) override;
+    std::expected<std::shared_ptr<GameData>, std::string> openGameData(const std::string& titleId) override;
 
     // Launched from the album instead of over a game: less memory available.
     bool appletMode() const;

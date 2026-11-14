@@ -38,7 +38,7 @@ private:
 };
 
 struct CodeFinding {
-    enum class Kind { Writes, Requires, ReadsData, Note };
+    enum class Kind { Writes, Requires, ReadsData, ReadsGameData, Note };
     Kind kind;
     std::size_t line;
     std::string detail;

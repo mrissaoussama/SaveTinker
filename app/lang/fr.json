@@ -170,6 +170,7 @@
   "Play a game once so it creates save data, then come back.": "Lancez un jeu une fois pour qu'il crée ses données, puis revenez.",
   "Preview code": "Aperçu du code",
   "Previous difference": "Différence précédente",
+  "Reads this game's own files (read only).": "Lit les fichiers du jeu (en lecture seule).",
   "Redo": "Rétablir",
   "Refresh": "Actualiser",
   "Refresh repositories": "Actualiser les dépôts",

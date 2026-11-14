@@ -178,6 +178,21 @@ Offsets are zero-based. Endian arguments are `"little"`/`"le"` or `"big"`/`"be"`
 | `st.lang` | Preferred label language |
 | `print(...)`, `st.warn(...)` | Editor log |
 
+### Game files
+
+Editors that need tables from the game itself (item names, stats) add `"game_data": true` to
+`manifest.json` and read the game's RomFS, read only:
+
+```lua
+local text = st.game_data.read("text/items.txt")          -- error if missing
+local maybe = st.game_data.read("text/extra.txt", true)   -- nil if missing
+for _, entry in ipairs(st.game_data.list("text")) do print(entry.name, entry.size, entry.directory) end
+```
+
+The code inspector flags editors that use this. On Switch the RomFS of the installed game is mounted on
+first use; on desktop the files come from `<console>/romfs/<title id>/`, and `savetinker-cli run` takes
+`--game-data <folder>`.
+
 `string.pack`/`string.unpack` are available for packed structures. `io`, `os`, `debug`, `load` and `package`
 are not. Scripts run with memory and instruction limits.
 

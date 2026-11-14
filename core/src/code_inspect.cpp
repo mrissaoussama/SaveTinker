@@ -178,6 +178,7 @@ std::vector<CodeFinding> summarizeScript(std::string_view code) {
     static const std::regex writes(R"(:(set|setBit|setBytes|setStr|setContent|splice|field|flag|text)\s*\()");
     static const std::regex requires_(R"(require\s*\(?\s*["']([^"']+)["'])");
     static const std::regex data(R"(st\.(data|labels)\s*\(\s*["']([^"']+)["'])");
+    static const std::regex gameData(R"(st\.game_data\.(read|list)\s*\(\s*["']?([^"',)]*))");
 
     std::vector<CodeFinding> findings;
     const auto lines = splitLines(code);
@@ -192,6 +193,8 @@ std::vector<CodeFinding> summarizeScript(std::string_view code) {
             findings.push_back({CodeFinding::Kind::Requires, i + 1, match[1].str()});
         if (std::regex_search(codePart, match, data))
             findings.push_back({CodeFinding::Kind::ReadsData, i + 1, match[2].str()});
+        if (std::regex_search(codePart, match, gameData))
+            findings.push_back({CodeFinding::Kind::ReadsGameData, i + 1, match[2].str()});
     }
     return findings;
 }

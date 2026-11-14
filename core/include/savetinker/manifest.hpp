@@ -38,6 +38,8 @@ struct EditorManifest {
     std::string source;
     std::string updateUrl;
     std::string entry = "main.lua";
+    // The editor reads the game's own files through st.game_data.
+    bool gameData = false;
     std::vector<GameTarget> games;
 
     const GameTarget* findGame(std::string_view platform, std::string_view titleId) const;

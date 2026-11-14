@@ -95,6 +95,10 @@ std::expected<EditorManifest, std::string> parseManifest(std::string_view json) 
         manifest.source = optionalString(root, "source");
         manifest.updateUrl = optionalString(root, "update_url");
         manifest.entry = optionalString(root, "entry", "main.lua");
+        if (auto gameData = root.find("game_data"); gameData != root.end()) {
+            if (!gameData->is_boolean()) return std::unexpected("\"game_data\" must be true or false");
+            manifest.gameData = gameData->get<bool>();
+        }
         manifest.games = parseGameTargets(root);
         return manifest;
     } catch (const nlohmann::json::exception& error) {

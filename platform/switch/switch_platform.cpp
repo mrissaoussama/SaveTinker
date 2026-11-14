@@ -199,4 +199,27 @@ std::expected<std::unique_ptr<SaveMount>, std::string> SwitchPlatform::mount(con
     return std::make_unique<SwitchSaveMount>(chunkSize);
 }
 
+namespace {
+
+// Keeps the game's RomFS mounted while an editor uses it.
+class RomfsGameData : public DirectoryGameData {
+public:
+    explicit RomfsGameData(std::string device) : DirectoryGameData(device + ":/"), device_(std::move(device)) {}
+    ~RomfsGameData() override { romfsUnmount(device_.c_str()); }
+
+private:
+    std::string device_;
+};
+
+}
+
+std::expected<std::shared_ptr<GameData>, std::string> SwitchPlatform::openGameData(const std::string& titleId) {
+    static int mounts = 0;
+    const std::string device = "stgame" + std::to_string(mounts++ % 8);
+    romfsUnmount(device.c_str());
+    if (const Result rc = romfsMountDataStorageFromProgram(parseTitleId(titleId), device.c_str()); R_FAILED(rc))
+        return std::unexpected(std::format("cannot open the game files (error 0x{:X})", rc));
+    return std::make_shared<RomfsGameData>(device);
+}
+
 }

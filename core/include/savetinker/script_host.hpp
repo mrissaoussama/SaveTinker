@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "savetinker/document.hpp"
+#include "savetinker/game_data.hpp"
 #include "savetinker/manifest.hpp"
 
 struct lua_State;
@@ -60,6 +61,8 @@ public:
     std::expected<std::string, std::string> evaluate(std::string_view code);
 
     void setDataLoader(DataLoader loader);
+    // Opened on the first st.game_data call, and only for editors whose manifest asks for game data.
+    void setGameDataOpener(GameDataOpener opener);
     Document& document();
 
     // Calls the function below `argumentCount` arguments on the stack with the script limits applied.

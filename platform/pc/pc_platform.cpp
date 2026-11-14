@@ -101,4 +101,11 @@ std::expected<std::unique_ptr<SaveMount>, std::string> PcPlatform::mount(const S
     return std::make_unique<DirectorySaveMount>(path);
 }
 
+std::expected<std::shared_ptr<GameData>, std::string> PcPlatform::openGameData(const std::string& titleId) {
+    const auto path = root_ / "romfs" / titleId;
+    std::error_code error;
+    if (!fs::is_directory(path, error)) return std::unexpected("no extracted game files in " + path.generic_string());
+    return std::make_shared<DirectoryGameData>(path);
+}
+
 }

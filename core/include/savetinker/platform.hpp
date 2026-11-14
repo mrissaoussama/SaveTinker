@@ -11,6 +11,7 @@
 
 #include "savetinker/byte_buffer.hpp"
 #include "savetinker/document.hpp"
+#include "savetinker/game_data.hpp"
 
 namespace st {
 
@@ -93,6 +94,7 @@ public:
     virtual std::vector<SaveInfo> saves() = 0;
     virtual std::optional<std::string> runningTitleId() = 0;
     virtual std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) = 0;
+    virtual std::expected<std::shared_ptr<GameData>, std::string> openGameData(const std::string& titleId);
 };
 
 // Path of `path` below `root` with forward slashes. Works on device mounts like "save:/" where

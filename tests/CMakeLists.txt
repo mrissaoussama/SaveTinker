@@ -10,6 +10,7 @@ add_executable(savetinker_tests
     test_editor_store.cpp
     test_editor_template.cpp
     test_example_editor.cpp
+    test_game_data.cpp
     test_i18n.cpp
     test_manifest.cpp
     test_network.cpp

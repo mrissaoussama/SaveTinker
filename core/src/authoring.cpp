@@ -139,6 +139,7 @@ std::string manifestToJson(const EditorManifest& manifest) {
     putIfSet(root, "source", manifest.source);
     putIfSet(root, "update_url", manifest.updateUrl);
     if (manifest.entry != "main.lua") root["entry"] = manifest.entry;
+    if (manifest.gameData) root["game_data"] = true;
     root["games"] = gamesToJson(manifest.games);
     return root.dump(2) + "\n";
 }

@@ -348,6 +348,8 @@ private:
         if (!modules.empty()) summary += trf("  \xC2\xB7  modules: {}", modules.size());
         if (!data.empty()) summary += trf("  \xC2\xB7  data files: {}", data.size());
         ui::dimText(summary);
+        if (package_.manifest.gameData)
+            ui::wrappedText(tr("Reads this game's own files (read only)."), ui::color::Warning);
         ui::dimText(tr("Editors run in a sandbox without file, network or system access. They can only change the save being edited, and a backup is made first."));
         ImGui::Spacing();
     }

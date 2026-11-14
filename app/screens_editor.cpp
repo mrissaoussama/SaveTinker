@@ -157,6 +157,9 @@ private:
             return;
         }
         host_->setDataLoader(st::directoryDataLoader(editor_.directory));
+        host_->setGameDataOpener([&platform = app.platform(), titleId = target_.save.titleId] {
+            return platform.openGameData(titleId);
+        });
         if (auto loaded = host_->loadEntry(); !loaded) {
             error_ = loaded.error();
             return;

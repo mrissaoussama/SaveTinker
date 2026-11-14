@@ -36,6 +36,7 @@ Usage:
       --lang <code>         label language
       --set <Page/Label=v>  change a field through the editor UI, repeatable
       --lua <code>          run Lua against the save, repeatable
+      --game-data <folder>  extracted game files for st.game_data
       --out <folder>        write the edited save files (runs before_save)
   savetinker-cli pack <editors folder> <repo folder> [--name <n>] [--maintainer <m>]
                       [--homepage <url>] [--description <text>]
@@ -228,7 +229,7 @@ void applySet(st::EditorSession& session, const std::string& assignment) {
 }
 
 int run(const Arguments& args) {
-    args.allowOnly({"title", "platform", "game-version", "lang", "set", "lua", "out"});
+    args.allowOnly({"title", "platform", "game-version", "lang", "set", "lua", "out", "game-data"});
     if (args.positional().size() != 2) throw UsageError("run needs an editor folder and a save");
     const fs::path editorDir = args.positional()[0];
     auto package = st::readEditorDirectory(editorDir);
@@ -247,6 +248,11 @@ int run(const Arguments& args) {
     auto document = loadSave(args.positional()[1]);
     st::ScriptHost host(document, context, st::directoryModuleLoader(editorDir, editorDir.parent_path() / "_lib"));
     host.setDataLoader(st::directoryDataLoader(editorDir));
+    if (auto gameData = args.option("game-data")) {
+        host.setGameDataOpener([folder = fs::path(*gameData)]() -> std::expected<std::shared_ptr<st::GameData>, std::string> {
+            return std::make_shared<st::DirectoryGameData>(folder);
+        });
+    }
     check(host.loadEntry());
 
     auto detected = host.detect();
@@ -421,6 +427,7 @@ const char* findingName(st::CodeFinding::Kind kind) {
     case st::CodeFinding::Kind::Writes: return "writes";
     case st::CodeFinding::Kind::Requires: return "requires";
     case st::CodeFinding::Kind::ReadsData: return "reads";
+    case st::CodeFinding::Kind::ReadsGameData: return "reads game file";
     default: return "note";
     }
 }

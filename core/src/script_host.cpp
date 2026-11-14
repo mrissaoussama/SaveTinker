@@ -91,6 +91,8 @@ struct ScriptHost::Impl {
     ScriptContext context;
     ModuleLoader loader;
     DataLoader dataLoader;
+    GameDataOpener gameDataOpener;
+    std::shared_ptr<GameData> gameData;
     ScriptLimits limits;
     lua_State* L = nullptr;
     std::size_t memoryUsed = 0;
@@ -195,6 +197,49 @@ struct ScriptHost::Impl {
         return 1;
     }
 
+    static GameData& openGameData(lua_State* L) {
+        auto& self = from(L);
+        if (!self.context.editor.gameData)
+            luaL_error(L, "add \"game_data\": true to manifest.json to read game files");
+        if (!self.gameData) {
+            if (!self.gameDataOpener) luaL_error(L, "game files are not available on this console");
+            auto opened = self.gameDataOpener();
+            if (!opened) luaL_error(L, "cannot open game files: %s", opened.error().c_str());
+            self.gameData = std::move(*opened);
+        }
+        return *self.gameData;
+    }
+
+    static int gameDataRead(lua_State* L) {
+        const std::string path(lua::checkString(L, 1));
+        const bool optional = lua_toboolean(L, 2) != 0;
+        auto& self = from(L);
+        const auto content = openGameData(L).read(path, self.limits.memoryBytes / 2);
+        if (!content) {
+            if (optional) return 0;
+            return luaL_error(L, "game file '%s' not found", path.c_str());
+        }
+        lua_pushlstring(L, reinterpret_cast<const char*>(content->data()), content->size());
+        return 1;
+    }
+
+    static int gameDataList(lua_State* L) {
+        const std::string path(luaL_optstring(L, 1, ""));
+        const auto entries = openGameData(L).list(path);
+        lua_createtable(L, static_cast<int>(entries.size()), 0);
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            lua_createtable(L, 0, 3);
+            lua_pushlstring(L, entries[i].name.data(), entries[i].name.size());
+            lua_setfield(L, -2, "name");
+            lua_pushinteger(L, static_cast<lua_Integer>(entries[i].size));
+            lua_setfield(L, -2, "size");
+            lua_pushboolean(L, entries[i].directory);
+            lua_setfield(L, -2, "directory");
+            lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
+        }
+        return 1;
+    }
+
     static int transaction(lua_State* L) {
         const std::string label(lua::checkString(L, 1));
         luaL_checktype(L, 2, LUA_TFUNCTION);
@@ -271,6 +316,13 @@ struct ScriptHost::Impl {
 
         lua::pushSave(L, document);
         lua_setfield(L, -2, "save");
+
+        lua_newtable(L);
+        lua_pushcfunction(L, lua::guarded<gameDataRead>);
+        lua_setfield(L, -2, "read");
+        lua_pushcfunction(L, lua::guarded<gameDataList>);
+        lua_setfield(L, -2, "list");
+        lua_setfield(L, -2, "game_data");
 
         lua_pushcfunction(L, lua::guarded<warn>);
         lua_setfield(L, -2, "warn");
@@ -350,6 +402,10 @@ std::expected<void, std::string> ScriptHost::loadEntry() {
 }
 
 void ScriptHost::setDataLoader(DataLoader loader) { impl_->dataLoader = std::move(loader); }
+void ScriptHost::setGameDataOpener(GameDataOpener opener) {
+    impl_->gameDataOpener = std::move(opener);
+    impl_->gameData.reset();
+}
 Document& ScriptHost::document() { return impl_->document; }
 
 std::expected<void, std::string> ScriptHost::call(int argumentCount, int resultCount) {
