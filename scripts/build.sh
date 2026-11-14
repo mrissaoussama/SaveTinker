@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: scripts/build.sh pc|switch [extra cmake args]
+# Usage: scripts/build.sh pc|switch|switch2|3ds [extra cmake args]
 set -euo pipefail
 
 target="${1:-pc}"
@@ -19,6 +19,17 @@ switch)
     "$DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-cmake" -S "$root" -B "$root/build/switch" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release "$@"
     cmake --build "$root/build/switch"
+    ;;
+switch2)
+    # Needs ounce-devkit (https://github.com/ouncebrew/ounce-devkit) installed into devkitPro.
+    export DEVKITPRO
+    "$DEVKITPRO/portlibs/switch2/bin/aarch64-none-elf-cmake" -S "$root" -B "$root/build/switch2" -G Ninja         -DCMAKE_BUILD_TYPE=Release "$@"
+    cmake --build "$root/build/switch2"
+    ;;
+3ds)
+    export DEVKITPRO
+    "$DEVKITPRO/portlibs/3ds/bin/arm-none-eabi-cmake" -S "$root" -B "$root/build/3ds" -G Ninja         -DCMAKE_BUILD_TYPE=Release "$@"
+    cmake --build "$root/build/3ds"
     ;;
 *)
     echo "unknown target: $target" >&2

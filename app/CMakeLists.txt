@@ -1,5 +1,17 @@
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+if(NINTENDO_SWITCH2)
+    # The Switch SDL2 package names libnx and Mesa in its pkg-config file; on Switch 2 the same library
+    # links against libounce and OunceVK's EGL instead.
+    find_library(SDL2_LIBRARY SDL2 REQUIRED)
+    find_path(SDL2_INCLUDE SDL.h PATH_SUFFIXES SDL2 REQUIRED)
+    pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl)
+    add_library(sdl2_switch2 INTERFACE)
+    target_include_directories(sdl2_switch2 INTERFACE ${SDL2_INCLUDE})
+    target_link_libraries(sdl2_switch2 INTERFACE ${SDL2_LIBRARY} PkgConfig::EGL)
+    add_library(PkgConfig::SDL2 ALIAS sdl2_switch2)
+else()
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+endif()
 
 set(SAVETINKER_UPDATE_REPO "" CACHE STRING "GitHub owner/repo that publishes SaveTinker releases")
 option(SAVETINKER_AUTOPILOT "Replay <data>/autopilot.txt and save screenshots (for testing)" OFF)

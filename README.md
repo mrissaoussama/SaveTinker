@@ -11,6 +11,7 @@ desktop build and tests, MSYS2 UCRT64 GCC, Ninja, SDL2 and curl.
 ```sh
 scripts/build.sh pc       # desktop build + unit tests
 scripts/build.sh switch   # build/switch/app/SaveTinker.nro
+scripts/build.sh switch2  # Switch 2 build, needs ounce-devkit installed into devkitPro
 ```
 
 Send to a console with `nxlink -s build/switch/app/SaveTinker.nro`.
