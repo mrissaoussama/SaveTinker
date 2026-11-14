@@ -13,6 +13,7 @@ inline constexpr int kApiVersion = 1;
 namespace platforms {
 inline constexpr std::string_view Switch = "switch";
 inline constexpr std::string_view N3ds = "3ds";
+inline constexpr std::string_view Nds = "nds";
 }
 
 std::string platformDisplayName(std::string_view platformId);

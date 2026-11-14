@@ -107,11 +107,14 @@ An editor is a folder with `manifest.json` and Lua files.
 }
 ```
 
-`versions` accepts `*`, exact versions, `>=`, `>`, `<=`, `<` and ranges like `1.0.0 - 1.2.0`.
+`versions` accepts `*`, exact versions, `>=`, `>`, `<=`, `<` and ranges like `1.0.0 - 1.2.0`. When the installed game
+version is outside the list, the app warns and lets the user open the editor anyway; scripts that know a
+version breaks them can refuse in `detect`. On 3DS, editors can also target `"platform": "nds"` for DS cartridges
+(title id `00000000` + the game code as hex) and receive extra data as its own save (`st.game.save_kind == "extdata"`).
 
 The entry script (`main.lua` by default) can define:
 
-- `detect(save)` returns true when the save matches what the editor understands
+- `detect(save)` returns true when the save matches what the editor understands, or `false, "reason"` to explain
 - `build(ui, save)` describes the editor screen
 - `before_save(save)` runs before writing, typically to fix checksums
 
@@ -162,6 +165,9 @@ Offsets are zero-based. Endian arguments are `"little"`/`"le"` or `"big"`/`"be"`
 |---|---|
 | `st.platform.id`, `st.platform.name` | Console the game runs on |
 | `st.game.title_id`, `.name`, `.version`, `.platform` | Game being edited |
+| `st.game.dlc`, `st.game.has_dlc(id)` | Installed add-on content ids (a suffix of the id is enough) |
+| `st.game.version_is(pattern)`, `st.version_matches(pattern, version)` | Version checks, same patterns as the manifest |
+| `st.game.save_kind` | `account`, `device`, `extdata`, `ds-card`... |
 | `st.editor.id`, `.name`, `.version` | Running editor |
 | `st.save:files()`, `:has(name)`, `:file(name)` | Save contents |
 | `file:u8/u16/u32/u64/s8/s16/s32/s64/f32/f64(offset[, endian])` | Typed reads |

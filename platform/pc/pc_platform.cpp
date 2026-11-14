@@ -47,6 +47,9 @@ std::vector<TitleInfo> PcPlatform::titles() {
         title.name = item.value("name", "");
         title.publisher = item.value("publisher", "");
         title.displayVersion = item.value("version", "");
+        if (auto addOns = item.find("dlc"); addOns != item.end() && addOns->is_array())
+            for (const auto& addOn : *addOns)
+                if (addOn.is_string()) title.addOns.push_back(normalizeTitleId(addOn.get<std::string>()));
         result.push_back(std::move(title));
     }
     return result;

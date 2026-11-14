@@ -136,6 +136,13 @@ std::vector<TitleInfo> SwitchPlatform::titles() {
                 journalSizes_[title.titleId] = {control->nacp.user_account_save_data_journal_size,
                                                 control->nacp.device_save_data_journal_size};
             }
+            NsApplicationContentMetaStatus metas[64];
+            s32 metaCount = 0;
+            if (R_SUCCEEDED(nsListApplicationContentMetaStatus(records[i].application_id, 0, metas, 64, &metaCount))) {
+                for (s32 m = 0; m < metaCount; ++m)
+                    if (metas[m].meta_type == NcmContentMetaType_AddOnContent)
+                        title.addOns.push_back(formatTitleId(metas[m].application_id));
+            }
             result.push_back(std::move(title));
         }
         offset += count;

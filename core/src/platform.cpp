@@ -11,12 +11,14 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr std::array<std::pair<SaveKind, std::string_view>, 5> kindNames{{
+constexpr std::array<std::pair<SaveKind, std::string_view>, 7> kindNames{{
     {SaveKind::Account, "account"},
     {SaveKind::Device, "device"},
     {SaveKind::Bcat, "bcat"},
     {SaveKind::Cache, "cache"},
     {SaveKind::System, "system"},
+    {SaveKind::ExtData, "extdata"},
+    {SaveKind::DsCard, "ds-card"},
 }};
 
 }

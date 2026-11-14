@@ -97,7 +97,18 @@ private:
         for (const auto& editor : app.editors().forGame(entry.info.platform, titleId_)) {
             if (ui::row(("open-" + editor.manifest.id).c_str(), trf("Edit with {}", editor.manifest.name)).activated) {
                 ImGui::CloseCurrentPopup();
-                app.push(makeEditorScreen(app, selected_, editor));
+                const auto* game = editor.manifest.findGame(entry.info.platform, titleId_);
+                const auto& version = entry.info.displayVersion;
+                if (game && !version.empty() && !game->supportsVersion(version)) {
+                    std::string supported;
+                    for (const auto& pattern : game->versions) supported += (supported.empty() ? "" : ", ") + pattern;
+                    app.confirm(tr("Untested game version"),
+                                trf("{} was made for version {} and this game is version {}. It may misread the save. A backup is made before anything is written.",
+                                    editor.manifest.name, supported, version),
+                                tr("Open anyway"), [save = selected_, editor](App& app) { app.push(makeEditorScreen(app, save, editor)); });
+                } else {
+                    app.push(makeEditorScreen(app, selected_, editor));
+                }
             }
         }
         if (ui::row("##hex", tr("Hex editor")).activated) {

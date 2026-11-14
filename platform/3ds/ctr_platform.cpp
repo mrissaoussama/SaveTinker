@@ -10,7 +10,10 @@ namespace st {
 namespace {
 
 constexpr const char* kSaveDevice = "stsave";
+constexpr const char* kExtDataDevice = "stext";
 constexpr std::uint32_t kApplicationHigh = 0x00040000;
+constexpr std::uint32_t kUpdateHigh = 0x0004000E;
+constexpr std::uint32_t kAddOnHigh = 0x0004008C;
 
 std::string formatTitleId(std::uint64_t id) {
     return std::format("{:016X}", id);
@@ -22,6 +25,12 @@ std::string formatVersion(std::uint16_t version) {
 
 FS_Path saveArchivePath(std::uint64_t id, std::uint8_t mediaType, std::array<std::uint32_t, 3>& storage) {
     storage = {mediaType, static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(id >> 32)};
+    return {PATH_BINARY, sizeof(storage), storage.data()};
+}
+
+// Extra data of a title lives on the SD card under the id formed by the middle bits of its title id.
+FS_Path extDataPath(std::uint64_t id, std::array<std::uint32_t, 3>& storage) {
+    storage = {MEDIATYPE_SD, static_cast<std::uint32_t>(id) >> 8, 0};
     return {PATH_BINARY, sizeof(storage), storage.data()};
 }
 
@@ -48,6 +57,46 @@ public:
                   throw std::runtime_error(std::format("commit failed (0x{:08X})", static_cast<std::uint32_t>(rc)));
           }) {}
     ~CtrSaveMount() override { archiveUnmount(kSaveDevice); }
+};
+
+// Extra data is written directly; it has no journal to commit.
+class ExtDataMount : public DirectorySaveMount {
+public:
+    ExtDataMount() : DirectorySaveMount(std::string(kExtDataDevice) + ":/") {}
+    ~ExtDataMount() override { archiveUnmount(kExtDataDevice); }
+};
+
+// A DS cartridge save chip shown as one file, "save.bin", written back on commit.
+class DsCardMount : public SaveMount {
+public:
+    explicit DsCardMount(DsCard::Info card) : card_(std::move(card)) {}
+
+    std::vector<SaveFileEntry> listFiles() override { return {{"save.bin", card_.size}}; }
+
+    Bytes read(const std::string& path) override {
+        if (path != "save.bin") throw std::runtime_error("no such file: " + path);
+        if (pending_) return *pending_;
+        auto data = DsCard::read(card_);
+        if (!data) throw std::runtime_error(data.error());
+        return *data;
+    }
+
+    void write(const std::string& path, ByteView data) override {
+        if (path != "save.bin") throw std::runtime_error("DS cartridges only hold save.bin");
+        pending_ = Bytes(data.begin(), data.end());
+    }
+
+    void remove(const std::string&) override { throw std::runtime_error("cannot remove the cartridge save"); }
+
+    void commit() override {
+        if (!pending_) return;
+        if (auto written = DsCard::write(card_, *pending_); !written) throw std::runtime_error(written.error());
+        pending_.reset();
+    }
+
+private:
+    DsCard::Info card_;
+    std::optional<Bytes> pending_;
 };
 
 class RomfsGameData : public DirectoryGameData {
@@ -78,6 +127,8 @@ std::vector<UserAccount> CtrPlatform::users() {
 std::vector<CtrPlatform::InstalledTitle> CtrPlatform::scan() {
     std::vector<InstalledTitle> titles;
     if (!amReady_) return titles;
+    std::map<std::uint32_t, std::uint16_t> updates;
+    std::map<std::uint32_t, std::vector<std::string>> addOns;
     for (const auto mediaType : {MEDIATYPE_SD, MEDIATYPE_GAME_CARD}) {
         u32 count = 0;
         if (R_FAILED(AM_GetTitleCount(mediaType, &count)) || count == 0) continue;
@@ -88,12 +139,22 @@ std::vector<CtrPlatform::InstalledTitle> CtrPlatform::scan() {
         std::vector<AM_TitleInfo> infos(ids.size());
         const bool haveInfo = R_SUCCEEDED(AM_GetTitleInfo(mediaType, static_cast<u32>(ids.size()), ids.data(), infos.data()));
         for (std::size_t i = 0; i < ids.size(); ++i) {
-            if ((ids[i] >> 32) != kApplicationHigh) continue;
-            titles.push_back({ids[i], static_cast<std::uint8_t>(mediaType), haveInfo ? infos[i].version : std::uint16_t{0}});
+            const auto high = static_cast<std::uint32_t>(ids[i] >> 32);
+            const auto low = static_cast<std::uint32_t>(ids[i]);
+            const std::uint16_t version = haveInfo ? infos[i].version : std::uint16_t{0};
+            if (high == kApplicationHigh) titles.push_back({ids[i], static_cast<std::uint8_t>(mediaType), version, {}, {}});
+            else if (high == kUpdateHigh) updates[low] = version;
+            else if (high == kAddOnHigh) addOns[low].push_back(formatTitleId(ids[i]));
         }
     }
     installed_.clear();
-    for (const auto& title : titles) installed_[formatTitleId(title.id)] = title;
+    for (auto& title : titles) {
+        const auto low = static_cast<std::uint32_t>(title.id);
+        if (auto update = updates.find(low); update != updates.end()) title.updateVersion = update->second;
+        if (auto owned = addOns.find(low); owned != addOns.end()) title.addOns = owned->second;
+        installed_[formatTitleId(title.id)] = title;
+    }
+    dsCard_ = DsCard::detect();
     return titles;
 }
 
@@ -101,6 +162,12 @@ const CtrPlatform::InstalledTitle* CtrPlatform::find(const std::string& titleId)
     if (installed_.empty()) scan();
     const auto found = installed_.find(titleId);
     return found == installed_.end() ? nullptr : &found->second;
+}
+
+std::string CtrPlatform::dsTitleId(const std::string& gameCode) {
+    std::string id = "00000000";
+    for (unsigned char c : gameCode) id += std::format("{:02X}", c);
+    return id;
 }
 
 std::vector<TitleInfo> CtrPlatform::titles() {
@@ -111,8 +178,9 @@ std::vector<TitleInfo> CtrPlatform::titles() {
         TitleInfo info;
         info.platform = "3ds";
         info.titleId = formatTitleId(title.id);
-        info.version = title.version;
-        info.displayVersion = formatVersion(title.version);
+        info.version = title.updateVersion.value_or(title.version);
+        info.displayVersion = formatVersion(static_cast<std::uint16_t>(info.version));
+        info.addOns = title.addOns;
         if (auto smdh = parseSmdh(readSmdh(title.id, title.mediaType), language)) {
             info.name = std::move(smdh->shortTitle);
             info.publisher = std::move(smdh->publisher);
@@ -120,6 +188,14 @@ std::vector<TitleInfo> CtrPlatform::titles() {
         }
         if (info.name.empty()) info.name = info.titleId;
         result.push_back(std::move(info));
+    }
+    if (dsCard_) {
+        TitleInfo card;
+        card.platform = "nds";
+        card.titleId = dsTitleId(dsCard_->gameCode);
+        card.name = dsCard_->title.empty() ? dsCard_->gameCode : dsCard_->title;
+        card.publisher = "DS cartridge " + dsCard_->gameCode;
+        result.push_back(std::move(card));
     }
     return result;
 }
@@ -129,22 +205,34 @@ std::vector<SaveInfo> CtrPlatform::saves() {
     for (const auto& title : scan()) {
         std::array<std::uint32_t, 3> storage{};
         FS_Archive archive = 0;
-        if (R_FAILED(FSUSER_OpenArchive(&archive, ARCHIVE_USER_SAVEDATA, saveArchivePath(title.id, title.mediaType, storage))))
-            continue;
-        FSUSER_CloseArchive(archive);
-        SaveInfo save;
-        save.titleId = formatTitleId(title.id);
-        save.kind = SaveKind::Device;
-        result.push_back(std::move(save));
+        if (R_SUCCEEDED(FSUSER_OpenArchive(&archive, ARCHIVE_USER_SAVEDATA, saveArchivePath(title.id, title.mediaType, storage)))) {
+            FSUSER_CloseArchive(archive);
+            result.push_back({formatTitleId(title.id), SaveKind::Device});
+        }
+        if (R_SUCCEEDED(FSUSER_OpenArchive(&archive, ARCHIVE_EXTDATA, extDataPath(title.id, storage)))) {
+            FSUSER_CloseArchive(archive);
+            result.push_back({formatTitleId(title.id), SaveKind::ExtData});
+        }
     }
+    if (dsCard_) result.push_back({dsTitleId(dsCard_->gameCode), SaveKind::DsCard, {}, dsCard_->size});
     return result;
 }
 
 std::expected<std::unique_ptr<SaveMount>, std::string> CtrPlatform::mount(const SaveInfo& save) {
+    if (save.kind == SaveKind::DsCard) {
+        if (!dsCard_ || dsTitleId(dsCard_->gameCode) != save.titleId) return std::unexpected("the DS cartridge was removed");
+        return std::make_unique<DsCardMount>(*dsCard_);
+    }
     const auto* title = find(save.titleId);
     if (!title) return std::unexpected("title is not installed");
-    archiveUnmount(kSaveDevice);
     std::array<std::uint32_t, 3> storage{};
+    if (save.kind == SaveKind::ExtData) {
+        archiveUnmount(kExtDataDevice);
+        if (const Result rc = archiveMount(ARCHIVE_EXTDATA, extDataPath(title->id, storage), kExtDataDevice); R_FAILED(rc))
+            return std::unexpected(std::format("cannot open extra data (0x{:08X})", static_cast<std::uint32_t>(rc)));
+        return std::make_unique<ExtDataMount>();
+    }
+    archiveUnmount(kSaveDevice);
     if (const Result rc = archiveMount(ARCHIVE_USER_SAVEDATA, saveArchivePath(title->id, title->mediaType, storage), kSaveDevice);
         R_FAILED(rc))
         return std::unexpected(std::format("cannot open save data (0x{:08X})", static_cast<std::uint32_t>(rc)));

@@ -14,6 +14,7 @@ using namespace json_fields;
 std::string platformDisplayName(std::string_view platformId) {
     if (platformId == platforms::Switch) return "Nintendo Switch";
     if (platformId == platforms::N3ds) return "Nintendo 3DS";
+    if (platformId == platforms::Nds) return "Nintendo DS";
     return std::string(platformId);
 }
 

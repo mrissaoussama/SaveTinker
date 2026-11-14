@@ -72,6 +72,19 @@ function st.bind(get, set)
     }
 end
 
+function st.game.has_dlc(id)
+    id = string.upper(id)
+    for _, owned in ipairs(st.game.dlc) do
+        if owned == id or owned:sub(-#id) == id then return true end
+    end
+    return false
+end
+
+-- Compares the running game version with a pattern like ">=1.1.0" or "1.0.0 - 1.2.0".
+function st.game.version_is(pattern)
+    return st.version_matches(pattern, st.game.version)
+end
+
 function st.labels(path)
     local dir, file = path:match("^(.*)/([^/]+)$")
     local text = dir and st.data(dir .. "/" .. st.lang .. "/" .. file, true)
@@ -93,6 +106,7 @@ struct ScriptHost::Impl {
     DataLoader dataLoader;
     GameDataOpener gameDataOpener;
     std::shared_ptr<GameData> gameData;
+    std::string detectReason;
     ScriptLimits limits;
     lua_State* L = nullptr;
     std::size_t memoryUsed = 0;
@@ -302,6 +316,13 @@ struct ScriptHost::Impl {
         setStringField("title_id", context.titleId);
         setStringField("name", context.gameName);
         setStringField("version", context.gameVersion);
+        setStringField("save_kind", context.saveKind);
+        lua_createtable(L, static_cast<int>(context.addOns.size()), 0);
+        for (std::size_t i = 0; i < context.addOns.size(); ++i) {
+            lua_pushlstring(L, context.addOns[i].data(), context.addOns[i].size());
+            lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
+        }
+        lua_setfield(L, -2, "dlc");
         lua_setfield(L, -2, "game");
 
         lua_newtable(L);
@@ -423,10 +444,15 @@ std::expected<bool, std::string> ScriptHost::detect() {
     lua_State* L = impl_->L;
     lua_getglobal(L, "detect");
     lua::pushSave(L, impl_->document);
-    if (auto called = impl_->protectedCall(1, 1); !called) return std::unexpected(called.error());
-    const bool matched = lua_toboolean(L, -1) != 0;
-    lua_pop(L, 1);
+    if (auto called = impl_->protectedCall(1, 2); !called) return std::unexpected(called.error());
+    const bool matched = lua_toboolean(L, -2) != 0;
+    impl_->detectReason = !matched && lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
+    lua_pop(L, 2);
     return matched;
+}
+
+const std::string& ScriptHost::detectReason() const {
+    return impl_->detectReason;
 }
 
 std::expected<void, std::string> ScriptHost::beforeSave() {

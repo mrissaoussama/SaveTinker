@@ -99,6 +99,8 @@ std::string App::saveLabel(const st::SaveInfo& save) const {
     case st::SaveKind::Bcat: return tr("BCAT data");
     case st::SaveKind::Cache: return tr("Cache");
     case st::SaveKind::System: return tr("System");
+    case st::SaveKind::ExtData: return tr("Extra data");
+    case st::SaveKind::DsCard: return tr("DS cartridge");
     }
     return tr("Save");
 }

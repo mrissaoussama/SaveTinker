@@ -4,6 +4,7 @@
 #include "lua_support.hpp"
 #include "savetinker/checksum.hpp"
 #include "savetinker/formats.hpp"
+#include "savetinker/version.hpp"
 
 namespace st::lua {
 
@@ -125,6 +126,11 @@ int msbtRead(lua_State* L) {
         lua_pushlstring(L, text.data(), text.size());
         lua_setfield(L, -2, message.label.c_str());
     }
+    return 1;
+}
+
+int versionMatchesLua(lua_State* L) {
+    lua_pushboolean(L, versionMatches(checkString(L, 1), checkString(L, 2)));
     return 1;
 }
 
@@ -257,6 +263,9 @@ void registerUtilities(lua_State* L, int stTableIndex) {
     };
     luaL_newlib(L, hashFunctions);
     lua_setfield(L, stTableIndex, "hash");
+
+    lua_pushcfunction(L, guarded<versionMatchesLua>);
+    lua_setfield(L, stTableIndex, "version_matches");
 
     lua_pushcfunction(L, guarded<hexEncode>);
     lua_setfield(L, stTableIndex, "hex");

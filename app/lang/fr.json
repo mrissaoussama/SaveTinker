@@ -79,6 +79,7 @@
   "Downloading update": "Téléchargement de la mise à jour",
   "Downloading {}": "Téléchargement de {}",
   "draft, {} fields": "brouillon, {} champs",
+  "DS cartridge": "Cartouche DS",
   "Edit": "Modifier",
   "Edit field": "Modifier le champ",
   "Edit with {}": "Modifier avec {}",
@@ -97,6 +98,7 @@
   "Enable": "Activer",
   "Enter a number": "Entrez un nombre",
   "Exit": "Quitter",
+  "Extra data": "Données additionnelles",
   "Field": "Champ",
   "Field label": "Nom du champ",
   "Fields ({})": "Champs ({})",
@@ -161,6 +163,7 @@
   "Offset is past the end of the file": "L'adresse dépasse la fin du fichier",
   "OK": "OK",
   "Open": "Ouvrir",
+  "Open anyway": "Ouvrir quand même",
   "Open source licenses": "Licences open source",
   "Options": "Options",
   "other version  ·  {}": "autre version  ·  {}",
@@ -257,6 +260,7 @@
   "Undo": "Annuler",
   "Unknown ({})": "Inconnu ({})",
   "Unreachable": "Injoignable",
+  "Untested game version": "Version du jeu non testée",
   "Update": "Mettre à jour",
   "Update available": "Mise à jour disponible",
   "Update available: {}": "Mise à jour disponible : {}",
@@ -285,5 +289,6 @@
   "{} repositories could not be reached": "{} dépôts injoignables",
   "{} saves": "{} sauvegardes",
   "{} v{} uses the same identifier and will be replaced.": "{} v{} utilise le même identifiant et sera remplacé.",
+  "{} was made for version {} and this game is version {}. It may misread the save. A backup is made before anything is written.": "{} a été fait pour la version {} et ce jeu est en version {}. Il peut mal lire la sauvegarde. Une copie est faite avant toute écriture.",
   "● Unsaved": "● Non écrit"
 }

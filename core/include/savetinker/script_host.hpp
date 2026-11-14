@@ -25,6 +25,10 @@ struct ScriptContext {
     std::string gameVersion;
     EditorManifest editor;
     std::string language = "en";
+    // Installed add-on content (DLC) ids for the game, as 16 hex digits.
+    std::vector<std::string> addOns;
+    // "account", "device", "extdata", "ds-card"...
+    std::string saveKind;
 };
 
 // Returns the source of a module ("main", "lib.crc") or nothing if it does not exist.
@@ -70,6 +74,8 @@ public:
 
     bool hasFunction(const char* name);
     std::expected<bool, std::string> detect();
+    // Second value returned by detect() when it rejects a save, shown to the user.
+    const std::string& detectReason() const;
     std::expected<void, std::string> beforeSave();
 
     const std::vector<LogEntry>& log() const;

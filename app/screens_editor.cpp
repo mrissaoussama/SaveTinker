@@ -79,7 +79,9 @@ public:
         }
         if (!session_) return;
         if (detectWarning_) {
-            ui::wrappedText(tr("This save does not look like what the editor expects. Changes may damage it."), ui::color::Warning);
+            ui::wrappedText(detectReason_.empty() ? tr("This save does not look like what the editor expects. Changes may damage it.")
+                                                  : detectReason_,
+                            ui::color::Warning);
         }
 
         if (!app.modalOpen()) handleShortcuts(app);
@@ -150,6 +152,8 @@ private:
         context.titleId = target_.save.titleId;
         context.gameName = target_.titleName;
         context.gameVersion = title ? title->info.displayVersion : "";
+        if (title) context.addOns = title->info.addOns;
+        context.saveKind = std::string(st::saveKindName(target_.save.kind));
         context.editor = editor_.manifest;
         context.language = app.language();
         try {
@@ -173,6 +177,7 @@ private:
             return;
         }
         detectWarning_ = !*detected;
+        detectReason_ = host_->detectReason();
         session_ = std::make_unique<st::EditorSession>(*host_);
         if (auto built = session_->rebuild(); !built) {
             error_ = built.error();
@@ -546,6 +551,7 @@ private:
     std::unique_ptr<st::EditorSession> session_;
     std::string error_;
     bool detectWarning_ = false;
+    std::string detectReason_;
     bool reviewing_ = false;
     bool showLog_ = false;
     bool pageChanged_ = true;

@@ -20,7 +20,7 @@ struct UserAccount {
     std::string nickname;
 };
 
-enum class SaveKind { Account, Device, Bcat, Cache, System };
+enum class SaveKind { Account, Device, Bcat, Cache, System, ExtData, DsCard };
 
 std::string_view saveKindName(SaveKind kind);
 std::optional<SaveKind> parseSaveKind(std::string_view name);
@@ -33,6 +33,8 @@ struct TitleInfo {
     std::string displayVersion;
     std::uint32_t version = 0;
     Bytes icon;
+    // Installed add-on content (DLC) ids.
+    std::vector<std::string> addOns;
 };
 
 struct SaveInfo {
