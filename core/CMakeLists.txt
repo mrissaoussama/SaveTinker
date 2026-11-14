@@ -1,4 +1,5 @@
 add_library(savetinker_core STATIC
+    src/authoring.cpp
     src/backup.cpp
     src/byte_buffer.cpp
     src/checksum.cpp
@@ -6,6 +7,7 @@ add_library(savetinker_core STATIC
     src/document.cpp
     src/editor_session.cpp
     src/editor_store.cpp
+    src/editor_template.cpp
     src/lua_save_api.cpp
     src/lua_util_api.cpp
     src/manifest.cpp

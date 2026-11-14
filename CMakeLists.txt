@@ -30,3 +30,7 @@ if(SAVETINKER_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+if(NOT NINTENDO_SWITCH)
+    add_subdirectory(tools/cli)
+endif()
