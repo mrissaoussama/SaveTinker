@@ -35,6 +35,8 @@ public:
     virtual bool hasTouchKeyboard() const { return false; }
     // False when hints should name console buttons rather than keyboard keys.
     virtual bool usesKeyboard() const { return true; }
+    // Where emulators and dumps usually keep GBA and DS saves.
+    virtual std::vector<std::string> defaultSaveFolders() const { return {}; }
     virtual std::string environmentWarning() const { return {}; }
     virtual void requestRestart() {}
 };

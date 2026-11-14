@@ -114,6 +114,10 @@ public:
     std::filesystem::path appPath() const override { return "sdmc:/switch/SaveTinker/SaveTinker.nro"; }
     bool hasTouchKeyboard() const override { return true; }
 
+    std::vector<std::string> defaultSaveFolders() const override {
+        return {"sdmc:/roms/gba", "sdmc:/roms/nds", "sdmc:/mGBA", "sdmc:/retroarch/saves"};
+    }
+
     std::string environmentWarning() const override {
         return appletMode_ ? "Album mode: less memory. Hold R while starting a game to launch with full memory." : "";
     }

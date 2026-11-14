@@ -20,7 +20,7 @@ struct UserAccount {
     std::string nickname;
 };
 
-enum class SaveKind { Account, Device, Bcat, Cache, System, ExtData, DsCard };
+enum class SaveKind { Account, Device, Bcat, Cache, System, ExtData, DsCard, File };
 
 std::string_view saveKindName(SaveKind kind);
 std::optional<SaveKind> parseSaveKind(std::string_view name);
@@ -44,6 +44,8 @@ struct SaveInfo {
     std::uint64_t size = 0;
     std::uint64_t journalSize = 0;
     std::uint64_t saveDataId = 0;
+    // Loose save files (emulators, dumps) are opened from here.
+    std::filesystem::path path;
 
     std::string slotName() const;
 };
@@ -68,7 +70,9 @@ class DirectorySaveMount : public SaveMount {
 public:
     using CommitHook = std::function<void()>;
 
-    DirectorySaveMount(std::filesystem::path root, CommitHook commitHook = {}, std::uint64_t chunkSize = 0);
+    // `atomicWrites` writes each file next to the original and renames it over, for plain disks without a journal.
+    DirectorySaveMount(std::filesystem::path root, CommitHook commitHook = {}, std::uint64_t chunkSize = 0,
+                       bool atomicWrites = false);
 
     std::vector<SaveFileEntry> listFiles() override;
     Bytes read(const std::string& path) override;
@@ -82,6 +86,7 @@ private:
     std::filesystem::path root_;
     CommitHook commitHook_;
     std::uint64_t chunkSize_;
+    bool atomicWrites_;
 };
 
 class Platform {

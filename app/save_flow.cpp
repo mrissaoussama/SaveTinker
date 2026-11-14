@@ -21,6 +21,13 @@ std::expected<st::Document, std::string> loadSave(App& app, const st::SaveInfo& 
 std::expected<void, std::string> writeSave(App& app, SaveTarget& target, const st::Document& document, const std::string& reason) {
     auto mount = app.platform().mount(target.save);
     if (!mount) return std::unexpected(mount.error());
+    std::uintmax_t needed = 0;
+    for (const auto& name : document.fileNames()) needed += document.file(name).size();
+    std::error_code spaceError;
+    const auto space = std::filesystem::space(app.platform().dataRoot(), spaceError);
+    if (!spaceError && space.available < needed * 2 + (1u << 20))
+        return std::unexpected(trf("Not enough free space on the SD card: {} needed, {} free. Nothing was written.",
+                                   ui::formatSize(needed * 2), ui::formatSize(space.available)));
     if (app.settings().autoBackup && !target.backedUp) {
         auto record = app.backups().create(**mount, target.save, target.titleName, reason);
         if (!record) return std::unexpected(trf("backup failed, nothing was written: {}", record.error()));

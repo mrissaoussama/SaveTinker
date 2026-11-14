@@ -19,6 +19,9 @@ Settings loadSettings(const std::filesystem::path& path) {
     settings.language = root.value("language", settings.language);
     settings.checkUpdatesOnStart = root.value("check_updates_on_start", settings.checkUpdatesOnStart);
     settings.skippedVersion = root.value("skipped_version", settings.skippedVersion);
+    if (auto folders = root.find("save_folders"); folders != root.end() && folders->is_array())
+        for (const auto& folder : *folders)
+            if (folder.is_string()) settings.saveFolders.push_back(folder.get<std::string>());
     if (auto repos = root.find("repos"); repos != root.end() && repos->is_array()) {
         for (const auto& repo : *repos) {
             if (!repo.is_object() || !repo.contains("url")) continue;
@@ -39,6 +42,7 @@ bool saveSettings(const std::filesystem::path& path, const Settings& settings) {
         {"check_updates_on_start", settings.checkUpdatesOnStart},
         {"skipped_version", settings.skippedVersion},
         {"repos", repos},
+        {"save_folders", settings.saveFolders},
     };
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);

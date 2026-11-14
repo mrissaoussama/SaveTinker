@@ -60,7 +60,8 @@ std::vector<ValidationIssue> validatePackage(const EditorPackage& package) {
     if (!package.find(manifest.entry))
         issues.push_back({Severity::Error, manifest.entry, "entry script is missing"});
     for (const auto& game : manifest.games)
-        if (game.platform != platforms::Switch && game.platform != platforms::N3ds && game.platform != platforms::Nds)
+        if (game.platform != platforms::Switch && game.platform != platforms::N3ds && game.platform != platforms::Nds &&
+            game.platform != platforms::Gba)
             issues.push_back({Severity::Warning, "manifest.json", "unknown platform \"" + game.platform + "\""});
     if (manifest.source.empty())
         issues.push_back({Severity::Warning, "manifest.json", "no \"source\" link, users cannot find the original code"});

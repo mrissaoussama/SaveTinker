@@ -13,6 +13,7 @@
 #include "savetinker/backup.hpp"
 #include "savetinker/editor_store.hpp"
 #include "savetinker/editor_template.hpp"
+#include "savetinker/file_saves.hpp"
 #include "savetinker/network.hpp"
 #include "savetinker/platform.hpp"
 #include "savetinker/repository.hpp"
@@ -104,6 +105,8 @@ public:
     std::string language() const;
     // Reloads UI translations after the language setting changes.
     void applyLanguage();
+    // Loose save folders from the settings, or the console defaults.
+    void applySaveFolders();
     // Left end of the footer line, where screens can show context help.
     ImVec2 footerTextPosition() const { return footerLeft_; }
 

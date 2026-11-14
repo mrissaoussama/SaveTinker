@@ -34,7 +34,7 @@ double now() {
 App::App(System& system, bool consoleGlyphs)
     : system_(system),
       consoleGlyphs_(consoleGlyphs),
-      platform_(system.createPlatform()),
+      platform_(std::make_unique<st::FileSavePlatform>(system.createPlatform())),
       settingsPath_(platform_->dataRoot() / "settings.json"),
       settings_(st::loadSettings(settingsPath_)),
       editors_(platform_->dataRoot() / "editors"),
@@ -45,6 +45,7 @@ App::App(System& system, bool consoleGlyphs)
     std::error_code ignored;
     std::filesystem::create_directories(editors_.libraryDir(), ignored);
     applyLanguage();
+    applySaveFolders();
     repoStatuses_ = repoManager_.loadCached(settings_.repos, catalog_);
     reloadTitles();
     screens_.push_back(makeMainScreen());
@@ -101,8 +102,17 @@ std::string App::saveLabel(const st::SaveInfo& save) const {
     case st::SaveKind::System: return tr("System");
     case st::SaveKind::ExtData: return tr("Extra data");
     case st::SaveKind::DsCard: return tr("DS cartridge");
+    case st::SaveKind::File: return save.path.filename().string();
     }
     return tr("Save");
+}
+
+void App::applySaveFolders() {
+    std::vector<std::filesystem::path> folders;
+    for (const auto& folder : settings_.saveFolders.empty() ? system_.defaultSaveFolders() : settings_.saveFolders)
+        folders.emplace_back(folder);
+    folders.push_back(platform_->dataRoot() / "saves");
+    static_cast<st::FileSavePlatform&>(*platform_).setFolders(std::move(folders));
 }
 
 void App::applyLanguage() {

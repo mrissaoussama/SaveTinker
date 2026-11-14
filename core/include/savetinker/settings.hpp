@@ -19,6 +19,8 @@ struct Settings {
     bool checkUpdatesOnStart = true;
     std::string skippedVersion;
     std::vector<RepoEntry> repos;
+    // Folders searched for loose save files (GBA, DS). Empty means the platform defaults.
+    std::vector<std::string> saveFolders;
 };
 
 Settings loadSettings(const std::filesystem::path& path);

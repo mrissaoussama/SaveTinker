@@ -76,6 +76,10 @@ public:
     bool hasTouchKeyboard() const override { return true; }
     bool usesKeyboard() const override { return false; }
 
+    std::vector<std::string> defaultSaveFolders() const override {
+        return {"sdmc:/roms/gba", "sdmc:/roms/nds", "sdmc:/3ds/open_agb_firm/saves", "sdmc:/gm9/out", "sdmc:/mGBA"};
+    }
+
 private:
     u32* socketBuffer_ = nullptr;
     bool socketsReady_ = false;

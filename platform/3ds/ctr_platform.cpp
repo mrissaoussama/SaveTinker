@@ -3,6 +3,7 @@
 #include <3ds.h>
 #include <format>
 
+#include "savetinker/file_saves.hpp"
 #include "savetinker/smdh.hpp"
 
 namespace st {
@@ -165,9 +166,7 @@ const CtrPlatform::InstalledTitle* CtrPlatform::find(const std::string& titleId)
 }
 
 std::string CtrPlatform::dsTitleId(const std::string& gameCode) {
-    std::string id = "00000000";
-    for (unsigned char c : gameCode) id += std::format("{:02X}", c);
-    return id;
+    return cartridgeTitleId(gameCode);
 }
 
 std::vector<TitleInfo> CtrPlatform::titles() {

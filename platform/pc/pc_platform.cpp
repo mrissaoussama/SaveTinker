@@ -101,7 +101,7 @@ std::expected<std::unique_ptr<SaveMount>, std::string> PcPlatform::mount(const S
     const auto path = slotPath(save);
     std::error_code error;
     if (!fs::is_directory(path, error)) return std::unexpected("save not found: " + path.string());
-    return std::make_unique<DirectorySaveMount>(path);
+    return std::make_unique<DirectorySaveMount>(path, DirectorySaveMount::CommitHook{}, 0, true);
 }
 
 std::expected<std::shared_ptr<GameData>, std::string> PcPlatform::openGameData(const std::string& titleId) {

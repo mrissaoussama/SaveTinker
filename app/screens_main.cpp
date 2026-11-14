@@ -243,6 +243,34 @@ private:
             }
         }
 
+        ui::sectionTitle(tr("Save file folders (GBA, DS)"));
+        {
+            const bool defaults = settings.saveFolders.empty();
+            const auto folders = defaults ? app.system().defaultSaveFolders() : settings.saveFolders;
+            for (std::size_t i = 0; i < folders.size(); ++i) {
+                if (ui::row(("##folder" + std::to_string(i)).c_str(), folders[i], defaults ? tr("default") : tr("Remove"),
+                            defaults ? ui::color::TextDim : ui::color::Danger)
+                        .activated &&
+                    !defaults) {
+                    settings.saveFolders.erase(settings.saveFolders.begin() + static_cast<std::ptrdiff_t>(i));
+                    changed = true;
+                    app.applySaveFolders();
+                    app.reloadTitles();
+                }
+            }
+            if (ui::row("##addfolder", tr("Add folder..."), "", ui::color::Accent).activated) {
+                app.promptText({tr("Folder with .sav files"), "", TextKind::Text, 256}, [folders](App& app, std::string folder) {
+                    if (folder.empty()) return;
+                    auto& list = app.settings().saveFolders;
+                    if (list.empty()) list = folders;
+                    list.push_back(folder);
+                    app.saveSettings();
+                    app.applySaveFolders();
+                    app.reloadTitles();
+                });
+            }
+        }
+
         ui::sectionTitle(tr("Display"));
         {
             static constexpr float sizes[] = {0.85f, 1.0f, 1.15f, 1.3f};

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <fstream>
 #include <stdexcept>
 
@@ -11,7 +12,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr std::array<std::pair<SaveKind, std::string_view>, 7> kindNames{{
+constexpr std::array<std::pair<SaveKind, std::string_view>, 8> kindNames{{
     {SaveKind::Account, "account"},
     {SaveKind::Device, "device"},
     {SaveKind::Bcat, "bcat"},
@@ -19,6 +20,7 @@ constexpr std::array<std::pair<SaveKind, std::string_view>, 7> kindNames{{
     {SaveKind::System, "system"},
     {SaveKind::ExtData, "extdata"},
     {SaveKind::DsCard, "ds-card"},
+    {SaveKind::File, "file"},
 }};
 
 }
@@ -38,11 +40,15 @@ std::optional<SaveKind> parseSaveKind(std::string_view name) {
 std::string SaveInfo::slotName() const {
     std::string name(saveKindName(kind));
     if (kind == SaveKind::Account && !userId.empty()) name += "-" + userId;
+    if (kind == SaveKind::File) {
+        name += "-";
+        for (unsigned char c : path.stem().string()) name += std::isalnum(c) ? static_cast<char>(c) : '_';
+    }
     return name;
 }
 
-DirectorySaveMount::DirectorySaveMount(fs::path root, CommitHook commitHook, std::uint64_t chunkSize)
-    : root_(std::move(root)), commitHook_(std::move(commitHook)), chunkSize_(chunkSize) {}
+DirectorySaveMount::DirectorySaveMount(fs::path root, CommitHook commitHook, std::uint64_t chunkSize, bool atomicWrites)
+    : root_(std::move(root)), commitHook_(std::move(commitHook)), chunkSize_(chunkSize), atomicWrites_(atomicWrites) {}
 
 fs::path DirectorySaveMount::resolve(const std::string& path) const {
     const fs::path relative = fs::path(path).lexically_normal();
@@ -70,6 +76,21 @@ Bytes DirectorySaveMount::read(const std::string& path) {
 void DirectorySaveMount::write(const std::string& path, ByteView data) {
     const auto target = resolve(path);
     fs::create_directories(target.parent_path());
+    if (atomicWrites_) {
+        const fs::path temporary = target.string() + ".savetinker-tmp";
+        {
+            std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+            stream.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+            stream.close();
+            if (!stream) {
+                std::error_code ignored;
+                fs::remove(temporary, ignored);
+                throw std::runtime_error("cannot write " + path + " (is the disk full?)");
+            }
+        }
+        fs::rename(temporary, target);
+        return;
+    }
     // Large writes are split and committed in between so the save journal does not overflow.
     const std::uint64_t step = chunkSize_ ? chunkSize_ : std::max<std::uint64_t>(data.size(), 1);
     std::uint64_t written = 0;

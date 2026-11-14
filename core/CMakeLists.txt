@@ -8,6 +8,7 @@ add_library(savetinker_core STATIC
     src/editor_session.cpp
     src/editor_store.cpp
     src/editor_template.cpp
+    src/file_saves.cpp
     src/formats.cpp
     src/game_data.cpp
     src/i18n.cpp

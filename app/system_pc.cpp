@@ -19,6 +19,10 @@ public:
         return std::make_unique<st::PcPlatform>(console_);
     }
 
+    std::vector<std::string> defaultSaveFolders() const override {
+        return {(console_ / "gba").string(), (console_ / "nds").string()};
+    }
+
     bool loadFonts() override {
         auto& io = ImGui::GetIO();
         for (const char* candidate : {"C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",

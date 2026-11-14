@@ -14,6 +14,7 @@ namespace platforms {
 inline constexpr std::string_view Switch = "switch";
 inline constexpr std::string_view N3ds = "3ds";
 inline constexpr std::string_view Nds = "nds";
+inline constexpr std::string_view Gba = "gba";
 }
 
 std::string platformDisplayName(std::string_view platformId);

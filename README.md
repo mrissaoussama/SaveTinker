@@ -207,6 +207,25 @@ first use; on desktop the files come from `<console>/romfs/<title id>/`, and `sa
 `string.pack`/`string.unpack` are available for packed structures. `io`, `os`, `debug`, `load` and `package`
 are not. Scripts run with memory and instruction limits.
 
+## GBA and DS save files
+
+Saves from emulators, open_agb_firm and GodMode9 dumps (`.sav`, `.srm`, `.sa1`, `.dsv`) are listed as games
+when they sit in one of the save file folders (Settings; defaults depend on the console). A `.gba` or `.nds`
+ROM with the same name identifies the game: editors target `"platform": "gba"` or `"nds"` with the title id
+`00000000` followed by the game code as hex (`BPEE` is `0000000042504545`). Without a ROM the save still opens
+in the hex editor. Editors see the save as one file, `save.bin`. GBA Virtual Console saves on 3DS live in a NAND
+partition homebrew cannot reach; dump them with GodMode9 first.
+
+## Writing safely
+
+Before writing, SaveTinker checks that the SD card has room for the backup and the new data and refuses
+otherwise. Backups are made before the first write. Switch and 3DS save data are journaled, so a failed write
+leaves the old save. Save files on the SD card and desktop saves are written next to the original and renamed
+over it. 3DS extra data and DS cartridge chips are written in place.
+
+Scripts have no network access and cannot reach files outside their editor folder, the open save and (if
+declared) the game's own files.
+
 ## Repositories
 
 A repository is a `repo.json` served from anywhere. Users can add as many as they like.
