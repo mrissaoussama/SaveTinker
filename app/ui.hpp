@@ -73,5 +73,7 @@ void progressBar(float fraction, const std::string& overlay);
 std::string formatSize(std::uint64_t bytes);
 // "‹  text  ›" for values changed with left/right, with ASCII arrows when the font lacks the quotes.
 std::string stepper(const std::string& text);
+// Arrow shown after dropdown values, with a fallback for fonts without it.
+const char* dropMark();
 
 }

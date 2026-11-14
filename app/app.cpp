@@ -171,6 +171,11 @@ void App::confirm(std::string title, std::string message, std::string confirmLab
     dialog_ = Dialog{std::move(title), std::move(message), std::move(confirmLabel), std::move(onConfirm)};
 }
 
+void App::choose(std::string title, std::string message, std::vector<std::pair<std::string, std::function<void(App&)>>> choices) {
+    dialog_ = Dialog{std::move(title), std::move(message), {}, {}};
+    dialog_->choices = std::move(choices);
+}
+
 void App::showMessage(std::string title, std::string message) {
     dialog_ = Dialog{std::move(title), std::move(message), {}, {}};
 }
@@ -500,17 +505,29 @@ void App::drawDialog() {
 
         bool done = false;
         std::function<void(App&)> action;
-        if (dialog_->onConfirm) {
+        if (!dialog_->choices.empty()) {
+            for (std::size_t i = 0; i < dialog_->choices.size(); ++i) {
+                if (i == 0 && ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+                const auto& [label, onChoose] = dialog_->choices[i];
+                const bool chosen = i == 0 ? ui::primaryButton(label.c_str()) : ImGui::Button(label.c_str());
+                if (chosen) {
+                    action = onChoose;
+                    done = true;
+                }
+                ImGui::SameLine();
+            }
+            if (ImGui::Button(trc("Cancel")) || (ui::pressed(ui::Button::B) && !ImGui::IsWindowAppearing())) done = true;
+        } else if (dialog_->onConfirm) {
             if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
             if (ui::primaryButton(dialog_->confirmLabel.c_str())) {
                 action = dialog_->onConfirm;
                 done = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button(trc("Cancel")) || ui::pressed(ui::Button::B)) done = true;
+            if (ImGui::Button(trc("Cancel")) || (ui::pressed(ui::Button::B) && !ImGui::IsWindowAppearing())) done = true;
         } else {
             if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-            if (ui::primaryButton(trc("OK")) || ui::pressed(ui::Button::B)) done = true;
+            if (ui::primaryButton(trc("OK")) || (ui::pressed(ui::Button::B) && !ImGui::IsWindowAppearing())) done = true;
         }
         if (done) {
             ImGui::CloseCurrentPopup();

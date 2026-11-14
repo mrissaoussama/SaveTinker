@@ -91,6 +91,8 @@ public:
 
     void promptText(TextRequest request, std::function<void(App&, std::string)> onDone);
     void confirm(std::string title, std::string message, std::string confirmLabel, std::function<void(App&)> onConfirm);
+    // Several actions plus Cancel; the first one is highlighted.
+    void choose(std::string title, std::string message, std::vector<std::pair<std::string, std::function<void(App&)>>> choices);
     void showMessage(std::string title, std::string message);
     void toast(std::string text, bool error = false);
 
@@ -138,6 +140,7 @@ private:
         std::string confirmLabel;
         std::function<void(App&)> onConfirm;
         bool opened = false;
+        std::vector<std::pair<std::string, std::function<void(App&)>>> choices;
     };
     struct Toast {
         std::string text;

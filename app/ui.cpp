@@ -269,6 +269,16 @@ void progressBar(float fraction, const std::string& overlay) {
     ImGui::PopStyleColor();
 }
 
+const char* dropMark() {
+    static const char* mark = [] {
+        ImFont* font = ImGui::GetFont();
+        if (font->IsGlyphInFont(0x25BE)) return "\xE2\x96\xBE";
+        if (font->IsGlyphInFont(0x25BC)) return "\xE2\x96\xBC";
+        return "\xE2\x80\xBA";
+    }();
+    return mark;
+}
+
 std::string stepper(const std::string& text) {
     static const bool quotes = ImGui::GetFont()->IsGlyphInFont(0x2039) && ImGui::GetFont()->IsGlyphInFont(0x203A);
     return quotes ? "\xE2\x80\xB9  " + text + "  \xE2\x80\xBA" : "<  " + text + "  >";

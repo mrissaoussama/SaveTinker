@@ -66,8 +66,14 @@ public:
             report(app, session_->back());
             return false;
         }
+        if (canLeaveFields_ && fieldsHadFocus_) {
+            focusSidebar_ = true;
+            return false;
+        }
         if (document_ && document_->isDirty()) {
-            app.confirm(tr("Discard changes?"), tr("Your edits have not been written to the save."), tr("Discard"), [](App& app) { app.pop(); });
+            app.choose(tr("Unsaved changes"), tr("Your edits have not been written to the save."),
+                       {{tr("Write and close"), [this](App& app) { if (write(app)) app.pop(); }},
+                        {tr("Close without writing"), [](App& app) { app.pop(); }}});
             return false;
         }
         return true;
@@ -88,17 +94,17 @@ public:
         if (!app.modalOpen()) {
             handleShortcuts(app);
             if (sidebarHadFocus_ && ui::pressed(ui::Button::Right)) focusContent_ = true;
-            if (fieldCouldLeave_ && ui::pressed(ui::Button::Left)) focusSidebar_ = true;
         }
         sidebarHadFocus_ = false;
-        fieldCouldLeave_ = false;
+        fieldsHadFocus_ = fieldsFocused_;
+        fieldsFocused_ = false;
         focusedHelp_.clear();
         focusedHasActions_ = false;
 
         const auto& links = session_->topLevelLinks();
         const bool sidebar = !links.empty();
         if (sidebar) {
-            ImGui::BeginChild("##pages", ImVec2(ImGui::GetContentRegionAvail().x * 0.28f, 0), ImGuiChildFlags_NavFlattened);
+            ImGui::BeginChild("##pages", ImVec2(ImGui::GetContentRegionAvail().x * 0.28f, 0));
             ui::holdFocusRequests(true);
             const std::string currentTop = session_->breadcrumbs().empty() ? "" : session_->breadcrumbs().front().id;
             bool sidebarFocused = false;
@@ -130,7 +136,7 @@ public:
             ImGui::SameLine();
         }
 
-        ImGui::BeginChild("##fields", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+        ImGui::BeginChild("##fields", ImVec2(0, 0));
         const auto& crumbs = session_->breadcrumbs();
         if (crumbs.size() > 1) {
             std::string path;
@@ -257,10 +263,7 @@ private:
     void trackFocus(const UiNode& node, const ui::RowResult& result) {
         if (!result.focused) return;
         if (result.id) lastFieldFocus_[session_->currentPage().id] = result.id;
-        // Left on a field that does not use left/right goes back to the page list.
-        const bool usesLeftRight = (node.kind == WidgetKind::Integer || node.kind == WidgetKind::Float ||
-                                    node.kind == WidgetKind::Segmented) && node.editable();
-        fieldCouldLeave_ = canLeaveFields_ && !usesLeftRight;
+        fieldsFocused_ = true;
         focusedHelp_ = node.help;
         focusedHasActions_ = !node.actions.empty();
         if (focusedHasActions_ && ui::pressed(ui::Button::Y)) {
@@ -315,6 +318,7 @@ private:
             const auto text = st::uiValueToString(node.value);
             const auto result = ui::row("##t", label, text.empty() ? "(empty)" : text);
             trackFocus(node, result);
+            if (result.activated && !node.editable()) app.toast(tr("This value is shown for information and cannot be changed"));
             if (result.activated && node.editable())
                 app.promptText({node.label, text, TextKind::Text, node.maxLength},
                                [this, node](App& app, std::string value) { edit(app, node, value); });
@@ -330,7 +334,7 @@ private:
         case WidgetKind::Choice: {
             const auto selected = node.selectedOption();
             const std::string value = selected ? node.options[*selected].label : trf("Unknown ({})", st::uiValueToString(node.value));
-            const auto result = ui::row("##c", label, value + "  \xE2\x96\xBE", selected ? ui::color::Text : ui::color::Warning);
+            const auto result = ui::row("##c", label, value + "  " + ui::dropMark(), selected ? ui::color::Text : ui::color::Warning);
             trackFocus(node, result);
             if (result.activated && node.editable()) {
                 choiceNode_ = node;
@@ -343,7 +347,7 @@ private:
         case WidgetKind::Flags: {
             std::size_t count = 0;
             for (std::size_t i = 0; i < node.options.size(); ++i) count += node.flagSet(i);
-            const auto result = ui::row("##f", label, std::format("{} of {}  \xE2\x96\xBE", count, node.options.size()));
+            const auto result = ui::row("##f", label, std::format("{} of {}  {}", count, node.options.size(), ui::dropMark()));
             trackFocus(node, result);
             if (result.activated && node.editable()) {
                 choiceNode_ = node;
@@ -362,6 +366,7 @@ private:
         case WidgetKind::Label: {
             const auto result = ui::row("##l", label, node.display);
             trackFocus(node, result);
+            if (result.activated) app.toast(tr("This value is shown for information and cannot be changed"));
             break;
         }
         case WidgetKind::Note: ui::dimText(node.label); break;
@@ -558,20 +563,21 @@ private:
         ImGui::EndPopup();
     }
 
-    void write(App& app) {
+    bool write(App& app) {
         if (auto prepared = host_->beforeSave(); !prepared) {
             app.showMessage(tr("The editor could not prepare the save"), prepared.error());
-            return;
+            return false;
         }
         auto written = writeSave(app, target_, *document_, trf("before edit with {}", editor_.manifest.name));
         if (!written) {
             app.showMessage(tr("Save not written"), written.error());
-            return;
+            return false;
         }
         document_->markSaved();
         app.reloadTitles();
         report(app, session_->rebuild());
         app.toast(tr("Save written"));
+        return true;
     }
 
     SaveTarget target_;
@@ -591,7 +597,8 @@ private:
     bool focusContent_ = false;
     bool canLeaveFields_ = false;
     bool sidebarHadFocus_ = false;
-    bool fieldCouldLeave_ = false;
+    bool fieldsFocused_ = false;
+    bool fieldsHadFocus_ = false;
     std::map<std::string, ImGuiID> lastFieldFocus_;
     std::optional<UiNode> choiceNode_;
     std::optional<UiNode> actionNode_;

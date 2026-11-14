@@ -40,7 +40,9 @@ public:
 
     bool requestClose(App& app) override {
         if (document_ && document_->isDirty()) {
-            app.confirm(tr("Discard changes?"), tr("Your edits have not been written to the save."), tr("Discard"), [](App& app) { app.pop(); });
+            app.choose(tr("Unsaved changes"), tr("Your edits have not been written to the save."),
+                       {{tr("Write and close"), [this](App& app) { if (write(app)) app.pop(); }},
+                        {tr("Close without writing"), [](App& app) { app.pop(); }}});
             return false;
         }
         return true;
@@ -365,12 +367,16 @@ private:
         followCursor_ = true;
     }
 
-    void write(App& app) {
+    bool write(App& app) {
         auto written = writeSave(app, target_, *document_, tr("before hex edit"));
-        if (!written) return app.showMessage(tr("Save not written"), written.error());
+        if (!written) {
+            app.showMessage(tr("Save not written"), written.error());
+            return false;
+        }
         document_->markSaved();
         app.reloadTitles();
         app.toast(tr("Save written"));
+        return true;
     }
 
     SaveTarget target_;
