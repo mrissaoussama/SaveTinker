@@ -208,7 +208,6 @@ std::expected<std::unique_ptr<SaveMount>, std::string> SwitchPlatform::mount(con
 
 namespace {
 
-// Keeps the game's RomFS mounted while an editor uses it.
 class RomfsGameData : public DirectoryGameData {
 public:
     explicit RomfsGameData(std::string device) : DirectoryGameData(device + ":/"), device_(std::move(device)) {}

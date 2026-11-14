@@ -8,7 +8,6 @@
 
 namespace st {
 
-// Installed 3DS titles (SD card and game card), their save data and extra data, and DS cartridge saves.
 class CtrPlatform : public Platform {
 public:
     CtrPlatform();
@@ -24,7 +23,6 @@ public:
     std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) override;
     std::expected<std::shared_ptr<GameData>, std::string> openGameData(const std::string& titleId) override;
 
-    // Title id used for a DS cartridge: its four-letter game code as hex.
     static std::string dsTitleId(const std::string& gameCode);
 
 private:

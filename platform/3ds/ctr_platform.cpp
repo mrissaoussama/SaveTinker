@@ -60,14 +60,12 @@ public:
     ~CtrSaveMount() override { archiveUnmount(kSaveDevice); }
 };
 
-// Extra data is written directly; it has no journal to commit.
 class ExtDataMount : public DirectorySaveMount {
 public:
     ExtDataMount() : DirectorySaveMount(std::string(kExtDataDevice) + ":/") {}
     ~ExtDataMount() override { archiveUnmount(kExtDataDevice); }
 };
 
-// A DS cartridge save chip shown as one file, "save.bin", written back on commit.
 class DsCardMount : public SaveMount {
 public:
     explicit DsCardMount(DsCard::Info card) : card_(std::move(card)) {}

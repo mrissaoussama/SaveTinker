@@ -19,7 +19,6 @@ struct GameDataEntry {
     bool directory = false;
 };
 
-// Read-only view of a game's own files (RomFS), for editors that need item names or tables from the game.
 class GameData {
 public:
     virtual ~GameData() = default;
@@ -28,7 +27,6 @@ public:
     virtual std::vector<GameDataEntry> list(const std::string& directory) = 0;
 };
 
-// Game files exposed as a folder: a RomFS mount on console or an extracted copy on desktop.
 class DirectoryGameData : public GameData {
 public:
     explicit DirectoryGameData(std::filesystem::path root);

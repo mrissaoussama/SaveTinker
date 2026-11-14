@@ -297,8 +297,7 @@ private:
         }
         {
             static const std::vector<std::pair<std::string, std::string>> languages = {
-                {"auto", tr_noop("System")}, {"en", "English"}, {"fr", "Français"}, {"de", "Deutsch"}, {"es", "Español"},
-                {"it", "Italiano"}, {"ja", "日本語"}, {"ar", "العربية"}};
+                {"auto", tr_noop("System")}, {"en", "English"}, {"fr", "Français"}};
             std::size_t index = 0;
             for (std::size_t i = 0; i < languages.size(); ++i)
                 if (languages[i].first == settings.language) index = i;

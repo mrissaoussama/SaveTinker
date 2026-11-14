@@ -24,18 +24,13 @@ inline constexpr ImU32 Modified = IM_COL32(250, 140, 60, 255);
 
 enum class Button { B, X, Y, L, R, ZL, ZR, Plus, Minus, Left, Right };
 
-// Console buttons, with keyboard equivalents on desktop. Ignored while typing.
 bool pressed(Button button, bool repeat = false);
 
 float rowHeight();
 
-// The next row drawn takes keyboard/controller focus.
 void focusNextRow();
-// Drops a pending focusNextRow request, for screens that place focus themselves.
 void cancelFocusRequest();
-// While held, rows leave a pending focus request for later rows (for side panels drawn first).
 void holdFocusRequests(bool hold);
-// Row focused outside popups during the last frame, and a way to focus it again after returning to a screen.
 ImGuiID focusedRow();
 void restoreFocus(ImGuiID rowId);
 
@@ -43,10 +38,8 @@ void restoreFocus(ImGuiID rowId);
 // previous frame because a left/right press makes navigation briefly move focus during that frame.
 int horizontalInput(ImGuiID rowId, bool focused);
 void beginFrame();
-// True while or right after the pointer moved far enough to count as a drag rather than a tap.
 bool wasDragged();
 void dragScroll();
-// Moving past the last row lands on the first and the other way round. Call before ending the window.
 void wrapNavigation();
 
 struct RowResult {
@@ -59,7 +52,6 @@ struct RowResult {
 RowResult row(const char* id, const std::string& label, const std::string& value = {}, ImU32 valueColor = color::TextDim,
               bool selected = false, float height = 0.0f);
 
-// Row whose label wraps onto up to `maxLines` lines and is cut after that.
 RowResult wrappedRow(const char* id, const std::string& label, bool selected, int maxLines);
 
 void toggleSwitch(ImVec2 rightEdge, float rowHeight, bool on);
@@ -69,14 +61,11 @@ void dimText(const std::string& text);
 void wrappedText(const std::string& text, ImU32 color = color::Text);
 void emptyState(const std::string& title, const std::string& detail = {});
 void iconTile(const Texture& texture, const std::string& name, float size);
-// Pixel-based QR code drawing.
 void qrCode(const std::string& text, float size);
 bool primaryButton(const char* label, float width = 0.0f);
 void progressBar(float fraction, const std::string& overlay);
 std::string formatSize(std::uint64_t bytes);
-// "‹  text  ›" for values changed with left/right, with ASCII arrows when the font lacks the quotes.
 std::string stepper(const std::string& text);
-// Arrow shown after dropdown values, with a fallback for fonts without it.
 const char* dropMark();
 
 }

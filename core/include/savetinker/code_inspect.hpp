@@ -26,7 +26,6 @@ struct Token {
     std::string_view text;
 };
 
-// Tokenizes code line by line, carrying long comments and strings across lines.
 class LuaHighlighter {
 public:
     std::vector<Token> line(std::string_view text);

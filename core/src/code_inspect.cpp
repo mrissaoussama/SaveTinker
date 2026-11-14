@@ -86,7 +86,6 @@ bool isIdentifierChar(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
 
-// Returns the level of a long bracket "[==[" starting at `position`, or nothing.
 std::optional<std::size_t> longBracketLevel(std::string_view text, std::size_t position) {
     if (position >= text.size() || text[position] != '[') return std::nullopt;
     std::size_t i = position + 1;

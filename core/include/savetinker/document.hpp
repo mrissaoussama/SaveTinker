@@ -29,7 +29,6 @@ struct ChangedRange {
     std::size_t length = 0;
 };
 
-// Holds the editable files of one save. Every write is recorded so it can be undone.
 class Document {
 public:
     using ChangeListener = std::function<void(const std::string& file)>;
@@ -42,7 +41,6 @@ public:
     const ByteBuffer& file(const std::string& name) const;
 
     void write(const std::string& file, std::size_t offset, ByteView data);
-    // Replaces `length` bytes at `offset` with `data`, which may change the file size.
     void splice(const std::string& file, std::size_t offset, std::size_t length, ByteView data);
     void setContent(const std::string& file, Bytes content);
 

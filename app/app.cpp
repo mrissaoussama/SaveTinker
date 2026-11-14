@@ -315,7 +315,6 @@ void App::frame() {
         if (finish) finish(*this);
     }
 
-    // Header and footer are plain drawings; the root window holds only the screen so navigation stays inside it.
     const ImVec2 margin = ImGui::GetStyle().WindowPadding;
     const float headerHeight = ImGui::GetFontSize() * 2.0f + margin.y;
     const float footerHeight = ImGui::GetFontSize() * 2.2f;
@@ -333,7 +332,6 @@ void App::frame() {
     try {
         screens_.back()->draw(*this);
     } catch (const std::exception& error) {
-        // Keep the app alive; a broken screen is closed and the error shown.
         if (screens_.size() > 1) pop();
         showMessage(tr("Something went wrong"), error.what());
     }
@@ -398,7 +396,6 @@ void App::drawFooter(ImDrawList* draw, ImVec2 origin, float width, float height)
     footerLeft_ = ImVec2(origin.x, y);
 }
 
-// Footer hints double as buttons for touch: a tap sends the same input as the console button.
 void App::handleFooterTaps() {
     auto& io = ImGui::GetIO();
     if (releaseFooterKey_ != ImGuiKey_None) {

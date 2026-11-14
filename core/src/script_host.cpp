@@ -63,7 +63,6 @@ DataLoader directoryDataLoader(fs::path editorDir) {
 
 namespace {
 
-// Helpers that are easier to express in Lua than through the C API.
 constexpr const char* kPrelude = R"lua(
 function st.bind(get, set)
     return {
@@ -359,7 +358,6 @@ struct ScriptHost::Impl {
             throw std::runtime_error(std::string("prelude failed: ") + lua_tostring(L, -1));
     }
 
-    // Expects the function and its arguments on the stack.
     std::expected<void, std::string> protectedCall(int argumentCount, int resultCount) {
         instructionsUsed = 0;
         const int functionIndex = lua_gettop(L) - argumentCount;

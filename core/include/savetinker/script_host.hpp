@@ -32,7 +32,6 @@ struct ScriptContext {
 
 using ModuleLoader = std::function<std::optional<std::string>(std::string_view moduleName)>;
 
-// Looks in the editor folder first, then in the shared library folder.
 ModuleLoader directoryModuleLoader(std::filesystem::path editorDir, std::filesystem::path libraryDir = {});
 
 using DataLoader = std::function<std::optional<std::string>(std::string_view relativePath)>;
@@ -65,12 +64,10 @@ public:
     void setGameDataOpener(GameDataOpener opener);
     Document& document();
 
-    // Calls the function below `argumentCount` arguments on the stack with the script limits applied.
     std::expected<void, std::string> call(int argumentCount, int resultCount);
 
     bool hasFunction(const char* name);
     std::expected<bool, std::string> detect();
-    // Second value returned by detect() when it rejects a save, shown to the user.
     const std::string& detectReason() const;
     std::expected<void, std::string> beforeSave();
 

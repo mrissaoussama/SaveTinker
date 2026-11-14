@@ -11,7 +11,6 @@ namespace st {
 std::uint32_t crc32(ByteView data, std::uint32_t seed = 0);
 std::uint16_t crc16Ccitt(ByteView data, std::uint16_t initial = 0xFFFF);
 std::uint32_t adler32(ByteView data);
-// MurmurHash3 x86 32-bit, used by many games to hash names.
 std::uint32_t murmur3(ByteView data, std::uint32_t seed = 0);
 
 std::array<std::uint8_t, 16> md5(ByteView data);

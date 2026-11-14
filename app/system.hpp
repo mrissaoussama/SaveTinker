@@ -23,7 +23,6 @@ public:
     virtual ~System() = default;
 
     virtual std::unique_ptr<st::Platform> createPlatform() = 0;
-    // Adds the UI fonts to ImGui. Returns true if console button glyphs are available.
     virtual bool loadFonts() = 0;
     virtual void updateInput() {}
     // Blocking native keyboard. Nothing means unsupported; an empty inner value means cancelled.

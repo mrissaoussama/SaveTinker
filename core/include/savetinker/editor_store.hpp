@@ -35,7 +35,6 @@ struct PackageLimits {
 
 std::expected<std::vector<PackageFile>, std::string> readZip(ByteView zip, const PackageLimits& limits = {});
 Bytes writeZip(const std::vector<PackageFile>& files);
-// Validates a zip and its manifest. A single top-level folder inside the zip is stripped.
 std::expected<EditorPackage, std::string> openPackage(ByteView zip, const PackageLimits& limits = {});
 
 struct InstalledEditorInfo {

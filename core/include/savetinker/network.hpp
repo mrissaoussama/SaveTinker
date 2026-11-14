@@ -38,17 +38,14 @@ struct RepoStatus {
     std::size_t editorCount = 0;
 };
 
-// Fetches repo indexes, keeps a copy of each so browsing works offline.
 class RepoManager {
 public:
     RepoManager(HttpClient& client, std::filesystem::path cacheDir);
 
     std::vector<RepoStatus> refresh(const std::vector<RepoEntry>& repos, RepoCatalog& catalog);
     std::vector<RepoStatus> loadCached(const std::vector<RepoEntry>& repos, RepoCatalog& catalog) const;
-    // True when an enabled repo was never downloaded or its copy is older than `maxAge`.
     bool cacheStale(const std::vector<RepoEntry>& repos, std::chrono::hours maxAge) const;
 
-    // Downloads an editor package and checks its size and SHA-256 when the repo lists them.
     std::expected<Bytes, std::string> downloadEditor(const RepoEditorEntry& editor, const ProgressCallback& progress = {});
 
 private:
@@ -66,7 +63,6 @@ struct ReleaseInfo {
     std::string checksumUrl;
 };
 
-// Reads a GitHub "latest release" response. Returns nothing when `currentVersion` is up to date.
 std::expected<std::optional<ReleaseInfo>, std::string> parseLatestRelease(std::string_view json, std::string_view currentVersion,
                                                                           std::string_view assetName);
 
@@ -76,7 +72,6 @@ public:
 
     bool configured() const { return !repoSlug_.empty(); }
     std::expected<std::optional<ReleaseInfo>, std::string> check();
-    // Downloads the release asset next to `target`, verifies it and replaces `target`.
     std::expected<void, std::string> install(const ReleaseInfo& release, const std::filesystem::path& target,
                                              const ProgressCallback& progress = {});
 

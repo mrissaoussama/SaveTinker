@@ -62,11 +62,8 @@ public:
     Bytes readBytes(std::size_t offset, std::size_t length) const;
     void writeBytes(std::size_t offset, ByteView data);
 
-    // Reads up to maxLength bytes, stopping at the first NUL.
     std::string readUtf8(std::size_t offset, std::size_t maxLength) const;
-    // Reads up to maxUnits UTF-16 code units, stopping at NUL, returns UTF-8.
     std::string readUtf16(std::size_t offset, std::size_t maxUnits, Endian endian = Endian::Little) const;
-    // Writes text into a fixed-size field, padding with zeros. Throws if it does not fit.
     void writeUtf8(std::size_t offset, std::string_view text, std::size_t fieldLength);
     void writeUtf16(std::size_t offset, std::string_view utf8Text, std::size_t fieldUnits,
                     Endian endian = Endian::Little);
@@ -95,7 +92,6 @@ struct ByteRange {
     std::size_t length = 0;
 };
 
-// Ranges where two buffers differ; extra bytes in the longer one count as one range.
 std::vector<ByteRange> diffBytes(ByteView a, ByteView b);
 
 std::u16string utf8ToUtf16(std::string_view utf8);

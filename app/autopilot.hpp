@@ -15,9 +15,7 @@ public:
     static std::optional<Autopilot> load(const std::filesystem::path& script, std::filesystem::path outputDir);
 
     bool beforeFrame();
-    // Call after rendering, before swapping buffers. Reads the OpenGL framebuffer.
     void afterRender(int width, int height);
-    // For renderers without glReadPixels: check, then hand over top-down RGBA pixels.
     bool wantsShot() const { return !pendingShot_.empty(); }
     void saveShot(const std::vector<unsigned char>& rgba, int width, int height);
 

@@ -64,7 +64,6 @@ void prepareDemo(const fs::path& console) {
 
 }
 
-// Usage: SaveTinker [--console <folder>] [--demo]
 std::unique_ptr<System> createSystem(int argc, char** argv) {
     fs::path console = fs::current_path() / "console";
     bool demo = false;

@@ -8,7 +8,6 @@
 
 namespace st {
 
-// Maps English UI text to another language. Files are flat JSON objects: {"Back": "Retour"}.
 class Translator {
 public:
     // Adds the entries of a translation file, replacing existing ones. Entries whose {} placeholders do not
@@ -17,7 +16,6 @@ public:
     void clear() { entries_.clear(); }
     std::size_t size() const { return entries_.size(); }
 
-    // The translation, or `text` itself when there is none. The returned view stays valid until the next load.
     std::string_view get(std::string_view text) const;
 
     template <typename... Args>
@@ -33,7 +31,6 @@ private:
     std::map<std::string, std::string, std::less<>> entries_;
 };
 
-// Number of {} placeholders, or -1 when braces are unbalanced.
 int countPlaceholders(std::string_view text);
 
 }

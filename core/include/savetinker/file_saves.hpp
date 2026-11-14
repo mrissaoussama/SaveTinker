@@ -21,7 +21,6 @@ std::optional<RomIdentity> readRomIdentity(const std::filesystem::path& rom);
 // Title id for a cartridge game: eight zeros, then the four-letter game code as hex.
 std::string cartridgeTitleId(const std::string& gameCode);
 
-// One save file on the SD card or disk, exposed to editors as "save.bin".
 class FileSaveMount : public SaveMount {
 public:
     explicit FileSaveMount(std::filesystem::path path);
@@ -38,7 +37,6 @@ private:
     std::filesystem::path path_;
 };
 
-// Adds save files from emulators and dumps (GBA, DS) found in folders to another platform's titles and saves.
 class FileSavePlatform : public Platform {
 public:
     explicit FileSavePlatform(std::unique_ptr<Platform> inner);

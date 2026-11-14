@@ -63,7 +63,6 @@ public:
     virtual void commit() = 0;
 };
 
-// Save files exposed as a normal directory, which covers the PC backend and Switch devoptab mounts.
 class DirectorySaveMount : public SaveMount {
 public:
     using CommitHook = std::function<void()>;
@@ -107,7 +106,6 @@ public:
 std::string relativePath(const std::filesystem::path& path, const std::filesystem::path& root);
 
 Document loadDocument(SaveMount& mount);
-// Writes files that differ from what is on the mount, then commits.
 void storeDocument(const Document& document, SaveMount& mount);
 
 }

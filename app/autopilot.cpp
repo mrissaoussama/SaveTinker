@@ -146,7 +146,6 @@ void Autopilot::afterRender(int width, int height) {
     std::vector<unsigned char> pixels(static_cast<std::size_t>(width) * height * 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    // OpenGL rows start at the bottom.
     std::vector<unsigned char> flipped(pixels.size());
     const std::size_t stride = static_cast<std::size_t>(width) * 4;
     for (int y = 0; y < height; ++y)

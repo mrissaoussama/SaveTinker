@@ -12,7 +12,6 @@
 
 namespace st {
 
-// Reads an editor folder the way it would be packed. Hidden files and folders are skipped.
 std::expected<EditorPackage, std::string> readEditorDirectory(const std::filesystem::path& directory);
 
 struct ValidationIssue {
@@ -22,7 +21,6 @@ struct ValidationIssue {
     std::string message;
 };
 
-// Checks Lua syntax, JSON data files and manifest details without running any code.
 std::vector<ValidationIssue> validatePackage(const EditorPackage& package);
 
 struct PackedEditor {
@@ -34,7 +32,6 @@ struct PackedEditor {
 PackedEditor packEditor(const EditorPackage& package, std::string_view downloadFolder = "editors");
 
 std::string manifestToJson(const EditorManifest& manifest);
-// Download links are written as stored, so relative links stay relative.
 std::string repoIndexToJson(const RepoIndex& index);
 
 struct UiDumpOptions {

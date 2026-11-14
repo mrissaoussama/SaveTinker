@@ -12,7 +12,6 @@
 
 namespace st {
 
-// A field marked in the hex editor. `type` is a numeric type (u8..f64), "bit", "utf8" or "utf16".
 struct TemplateField {
     std::string file;
     std::uint64_t offset = 0;
@@ -25,7 +24,6 @@ struct TemplateField {
     bool hex = false;
 };
 
-// Starting point for a new editor, built from fields picked in the hex editor.
 struct EditorTemplate {
     EditorManifest manifest;
     std::string detectFile;

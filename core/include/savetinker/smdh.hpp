@@ -7,11 +7,9 @@
 
 namespace st {
 
-// 3DS title metadata (icon.bin / "icon" in ExeFS).
 struct Smdh {
     std::string shortTitle;
     std::string publisher;
-    // 48x48 icon as an uncompressed TGA image that stb_image can load.
     Bytes iconTga;
 };
 

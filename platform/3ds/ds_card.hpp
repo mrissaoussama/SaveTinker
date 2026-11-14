@@ -9,7 +9,6 @@
 
 namespace st {
 
-// Save chip of a DS cartridge in the 3DS card slot, reached over SPI through pxi:dev.
 class DsCard {
 public:
     enum class Chip { Eeprom512, Eeprom8K, Eeprom64K, Eeprom128K, Flash, FlashInfrared };
@@ -21,7 +20,6 @@ public:
         std::uint32_t size = 0;
     };
 
-    // The inserted DS cartridge and its save chip, or nothing when there is none.
     static std::optional<Info> detect();
 
     static std::expected<Bytes, std::string> read(const Info& card);

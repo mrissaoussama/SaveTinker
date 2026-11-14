@@ -38,7 +38,6 @@ public:
     virtual std::string title() const = 0;
     virtual void draw(App& app) = 0;
     virtual std::vector<Hint> hints(const App& app) const = 0;
-    // Return false to keep the screen open (for example to ask about unsaved changes).
     virtual bool requestClose(App&) { return true; }
 
     ImGuiID savedFocus = 0;
@@ -85,7 +84,6 @@ public:
     void pop();
     void replaceTop(std::unique_ptr<Screen> screen);
 
-    // Runs `work` on a worker thread; the returned closure runs on the UI thread afterwards.
     void runTask(std::string label, std::function<std::function<void(App&)>(Progress&)> work);
     bool busy() const { return task_.has_value(); }
 
@@ -98,7 +96,6 @@ public:
     void refreshRepos(bool notify);
     void checkAppUpdate(bool silent);
 
-    // Button names: "A", "B", "X", "Y", "L", "R", "ZL", "ZR", "+", "-".
     std::string buttonGlyph(const std::string& button) const;
     bool consoleGlyphs() const { return consoleGlyphs_; }
     bool modalOpen() const;
@@ -188,12 +185,10 @@ std::unique_ptr<Screen> makeBackupsScreen(const st::SaveInfo& save);
 std::unique_ptr<Screen> makeEditorDetailScreen(const std::string& editorId);
 std::unique_ptr<Screen> makeRepoScreen(const std::string& repoUrl);
 std::unique_ptr<Screen> makeRepoEditorScreen(const std::string& repoUrl, const std::string& editorId);
-// Shows package files and code. With `installAction`, an install button is offered.
 std::unique_ptr<Screen> makeInspectScreen(std::string title, st::EditorPackage package,
                                           std::optional<st::EditorPackage> previous,
                                           std::function<void(App&)> installAction);
 
-// Editor creator drafts are kept per title in <data>/drafts/<title id>.json.
 st::EditorTemplate& editorDraft(App& app, const std::string& titleId);
 void storeEditorDraft(App& app, const std::string& titleId);
 void discardEditorDraft(App& app, const std::string& titleId);

@@ -19,7 +19,6 @@ constexpr std::array<std::uint32_t, 256> makeCrc32Table() {
 
 constexpr auto crc32Table = makeCrc32Table();
 
-// Pads per MD5/SHA rules; the bit length is appended in the given byte order.
 Bytes padMessage(ByteView data, bool lengthBigEndian) {
     Bytes padded(data.begin(), data.end());
     const std::uint64_t bitLength = static_cast<std::uint64_t>(data.size()) * 8;

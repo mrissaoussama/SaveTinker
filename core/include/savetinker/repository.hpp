@@ -39,7 +39,6 @@ struct RepoIndex {
     std::vector<RepoEditorEntry> editors;
 };
 
-// `indexUrl` is used to resolve relative download links.
 std::expected<RepoIndex, std::string> parseRepoIndex(std::string_view json, std::string_view indexUrl = {});
 std::string resolveUrl(std::string_view baseUrl, std::string_view reference);
 
