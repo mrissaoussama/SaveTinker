@@ -118,6 +118,7 @@ private:
     void drawPrompt();
     void drawDialog();
     void drawToasts();
+    void handleFooterTaps();
     void handleBack();
 
     struct Task {
@@ -171,6 +172,13 @@ private:
     std::optional<Prompt> prompt_;
     std::optional<Dialog> dialog_;
     std::vector<Toast> toasts_;
+    struct FooterTarget {
+        ImVec2 min;
+        ImVec2 max;
+        std::string button;
+    };
+    std::vector<FooterTarget> footerTargets_;
+    ImGuiKey releaseFooterKey_ = ImGuiKey_None;
 };
 
 std::unique_ptr<Screen> makeMainScreen();

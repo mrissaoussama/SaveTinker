@@ -8,7 +8,8 @@
 namespace app {
 
 // Test helper: replays button presses from a script and saves framebuffer screenshots.
-// Script lines: "press A", "press DOWN 3", "wait 30", "shot name", "quit". Lines starting with # are ignored.
+// Script lines: "press A", "press DOWN 3", "type text", "tap x y", "drag x y dx dy", "wait 30", "shot name",
+// "quit". Lines starting with # are ignored.
 class Autopilot {
 public:
     static std::optional<Autopilot> load(const std::filesystem::path& script, std::filesystem::path outputDir);
@@ -23,7 +24,7 @@ public:
 
 private:
     struct Step {
-        enum class Kind { Press, Type, Wait, Shot, Quit } kind;
+        enum class Kind { Press, Type, Touch, Wait, Shot, Quit } kind;
         std::string argument;
         int count = 1;
     };
@@ -33,6 +34,9 @@ private:
     std::size_t index_ = 0;
     int waitFrames_ = 0;
     int releaseKey_ = 0;
+    // Pointer path for "tap x y" and "drag x y dx dy": positions to visit, then release.
+    std::vector<std::pair<float, float>> touchPath_;
+    std::size_t touchStep_ = 0;
     std::string pendingShot_;
 };
 

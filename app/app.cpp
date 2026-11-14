@@ -338,6 +338,8 @@ void App::frame() {
     drawTask();
     ImGui::End();
     drawToasts();
+    ui::dragScroll();
+    handleFooterTaps();
     retired_.clear();
 }
 
@@ -368,7 +370,9 @@ void App::drawFooter(ImDrawList* draw, ImVec2 origin, float width, float height)
     float x = origin.x + width;
     const float y = origin.y + (height - ImGui::GetFontSize()) * 0.5f;
     const auto hints = screens_.back()->hints(*this);
+    footerTargets_.clear();
     for (auto it = hints.rbegin(); it != hints.rend(); ++it) {
+        const float right = x;
         const std::string glyph = buttonGlyph(it->button);
         const float labelWidth = ImGui::CalcTextSize(it->label.c_str()).x;
         const float glyphWidth = ImGui::CalcTextSize(glyph.c_str()).x;
@@ -381,9 +385,36 @@ void App::drawFooter(ImDrawList* draw, ImVec2 origin, float width, float height)
                                 IM_COL32(70, 76, 92, 255), pad);
         }
         draw->AddText(ImVec2(x, y), ui::color::Text, glyph.c_str());
+        footerTargets_.push_back({ImVec2(x - ImGui::GetFontSize() * 0.4f, origin.y), ImVec2(right, origin.y + height), it->button});
         x -= ImGui::GetFontSize() * 1.4f;
     }
     footerLeft_ = ImVec2(origin.x, y);
+}
+
+// Footer hints double as buttons for touch: a tap sends the same input as the console button.
+void App::handleFooterTaps() {
+    auto& io = ImGui::GetIO();
+    if (releaseFooterKey_ != ImGuiKey_None) {
+        io.AddKeyEvent(releaseFooterKey_, false);
+        releaseFooterKey_ = ImGuiKey_None;
+    }
+    if (!ImGui::IsMouseReleased(ImGuiMouseButton_Left) || ui::wasDragged()) return;
+    static const std::map<std::string, ImGuiKey> keys = {
+        {"A", ImGuiKey_GamepadFaceDown}, {"B", ImGuiKey_GamepadFaceRight}, {"X", ImGuiKey_GamepadFaceUp},
+        {"Y", ImGuiKey_GamepadFaceLeft}, {"L", ImGuiKey_GamepadL1},        {"R", ImGuiKey_GamepadR1},
+        {"ZL", ImGuiKey_GamepadL2},      {"ZR", ImGuiKey_GamepadR2},       {"+", ImGuiKey_GamepadStart},
+        {"-", ImGuiKey_GamepadBack},     {"RS", ImGuiKey_GamepadRStickDown},
+    };
+    for (const auto& target : footerTargets_) {
+        if (io.MousePos.x < target.min.x || io.MousePos.x > target.max.x || io.MousePos.y < target.min.y ||
+            io.MousePos.y > target.max.y)
+            continue;
+        if (auto key = keys.find(target.button); key != keys.end()) {
+            io.AddKeyEvent(key->second, true);
+            releaseFooterKey_ = key->second;
+        }
+        break;
+    }
 }
 
 void App::drawTask() {

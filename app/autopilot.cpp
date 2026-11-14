@@ -51,7 +51,14 @@ std::optional<Autopilot> Autopilot::load(const std::filesystem::path& script, st
         if (command == "press") autopilot.steps_.push_back({Step::Kind::Press, argument, std::max(1, count)});
         else if (command == "wait") autopilot.steps_.push_back({Step::Kind::Wait, {}, std::max(1, std::atoi(argument.c_str()))});
         else if (command == "shot") autopilot.steps_.push_back({Step::Kind::Shot, argument, 1});
-        else if (command == "type") autopilot.steps_.push_back({Step::Kind::Type, line.size() > 5 ? line.substr(5) : "", 1});
+        else if (command == "tap" || command == "drag") {
+            std::istringstream numbers(line.substr(command.size()));
+            float x = 0, y = 0, dx = 0, dy = 0;
+            numbers >> x >> y >> dx >> dy;
+            std::ostringstream path;
+            path << x << ' ' << y << ' ' << dx << ' ' << dy;
+            autopilot.steps_.push_back({Step::Kind::Touch, path.str(), 1});
+        } else if (command == "type") autopilot.steps_.push_back({Step::Kind::Type, line.size() > 5 ? line.substr(5) : "", 1});
         else if (command == "quit") autopilot.steps_.push_back({Step::Kind::Quit, {}, 1});
     }
     return autopilot;
@@ -60,6 +67,19 @@ std::optional<Autopilot> Autopilot::load(const std::filesystem::path& script, st
 bool Autopilot::beforeFrame() {
     auto& io = ImGui::GetIO();
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+    if (!touchPath_.empty()) {
+        if (touchStep_ < touchPath_.size()) {
+            io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+            io.AddMousePosEvent(touchPath_[touchStep_].first, touchPath_[touchStep_].second);
+            if (touchStep_ == 0) io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+            ++touchStep_;
+        } else {
+            io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+            touchPath_.clear();
+            waitFrames_ = std::max(waitFrames_, 3);
+        }
+        return true;
+    }
     if (releaseKey_) {
         io.AddKeyEvent(static_cast<ImGuiKey>(releaseKey_), false);
         releaseKey_ = 0;
@@ -83,6 +103,19 @@ bool Autopilot::beforeFrame() {
             waitFrames_ = 2;
             return true;
         case Step::Kind::Quit: return false;
+        case Step::Kind::Touch: {
+            std::istringstream numbers(step.argument);
+            float x = 0, y = 0, dx = 0, dy = 0;
+            numbers >> x >> y >> dx >> dy;
+            touchPath_.clear();
+            touchStep_ = 0;
+            const int moves = (dx != 0 || dy != 0) ? 12 : 0;
+            touchPath_.emplace_back(x, y);
+            touchPath_.emplace_back(x, y);
+            for (int i = 1; i <= moves; ++i) touchPath_.emplace_back(x + dx * i / moves, y + dy * i / moves);
+            ++index_;
+            return true;
+        }
         case Step::Kind::Type:
             io.AddInputCharactersUTF8(step.argument.c_str());
             ++index_;

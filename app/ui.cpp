@@ -1,5 +1,6 @@
 #include "ui.hpp"
 
+#include <algorithm>
 #include <format>
 #include <imgui_internal.h>
 
@@ -78,6 +79,26 @@ int horizontalInput(ImGuiID rowId, bool focused) {
     return 0;
 }
 
+bool wasDragged() {
+    const float limit = ImGui::GetFontSize() * 0.6f;
+    return ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > limit * limit;
+}
+
+// Dragging with a finger (or the mouse) scrolls the list under it instead of pressing rows.
+void dragScroll() {
+    auto& io = ImGui::GetIO();
+    static ImGuiWindow* target = nullptr;
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        target = GImGui->HoveredWindow;
+        while (target && target->ScrollMax.y <= 0.0f && target->ParentWindow && !(target->Flags & ImGuiWindowFlags_Popup))
+            target = target->ParentWindow;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) target = nullptr;
+    if (!target || !wasDragged() || target->ScrollMax.y <= 0.0f) return;
+    ImGui::SetScrollY(target, std::clamp(target->Scroll.y - io.MouseDelta.y, 0.0f, target->ScrollMax.y));
+    ImGui::ClearActiveID();
+}
+
 void beginFrame() {
     if (restoreTarget && --restoreFrames < 0) {
         restoreTarget = 0;
@@ -110,7 +131,7 @@ RowResult row(const char* id, const std::string& label, const std::string& value
         focusRequested = false;
         restoreTarget = 0;
     }
-    result.activated = ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowOverlap, ImVec2(width, rowH));
+    result.activated = ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowOverlap, ImVec2(width, rowH)) && !wasDragged();
     ImGui::PopStyleColor(3);
     result.id = ImGui::GetItemID();
     result.focused = ImGui::IsItemFocused();

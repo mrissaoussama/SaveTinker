@@ -42,6 +42,10 @@ void restoreFocus(ImGuiID rowId);
 int horizontalInput(ImGuiID rowId, bool focused);
 // Call right after ImGui::NewFrame.
 void beginFrame();
+// True while or right after the pointer moved far enough to count as a drag rather than a tap.
+bool wasDragged();
+// Call once per frame after the screen is drawn.
+void dragScroll();
 
 struct RowResult {
     ImGuiID id = 0;

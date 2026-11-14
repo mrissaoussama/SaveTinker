@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <map>
 
 #include "app.hpp"
 #include "i18n.hpp"
@@ -84,7 +85,13 @@ public:
                             ui::color::Warning);
         }
 
-        if (!app.modalOpen()) handleShortcuts(app);
+        if (!app.modalOpen()) {
+            handleShortcuts(app);
+            if (sidebarHadFocus_ && ui::pressed(ui::Button::Right)) focusContent_ = true;
+            if (fieldCouldLeave_ && ui::pressed(ui::Button::Left)) focusSidebar_ = true;
+        }
+        sidebarHadFocus_ = false;
+        fieldCouldLeave_ = false;
         focusedHelp_.clear();
         focusedHasActions_ = false;
 
@@ -94,18 +101,30 @@ public:
             ImGui::BeginChild("##pages", ImVec2(ImGui::GetContentRegionAvail().x * 0.28f, 0), ImGuiChildFlags_NavFlattened);
             ui::holdFocusRequests(true);
             const std::string currentTop = session_->breadcrumbs().empty() ? "" : session_->breadcrumbs().front().id;
-            if (hasRootContent()) {
-                if (ui::row("##root", session_->root().title, "", ui::color::TextDim, currentTop.empty()).activated)
-                    pending_ = [this, &app] { report(app, session_->openTopLevel("")); };
-            }
-            for (const auto& link : links) {
-                const bool current = link.pageId == currentTop;
-                if (ui::row(link.pageId.c_str(), link.label, "", ui::color::TextDim, current).activated) {
-                    const auto id = link.pageId;
-                    pending_ = [this, &app, id] { report(app, session_->openTopLevel(id)); };
+            bool sidebarFocused = false;
+            // A page in the list opens it and moves into its fields; right does the same for the current page.
+            auto pageRow = [&](const char* id, const std::string& label, const std::string& pageId) {
+                const bool current = pageId == currentTop;
+                if (current && focusSidebar_) {
+                    ImGui::SetKeyboardFocusHere();
+                    ImGui::SetNavCursorVisible(true);
+                    ImGui::SetScrollHereY(0.5f);
+                    focusSidebar_ = false;
+                }
+                const auto result = ui::row(id, label, "", ui::color::TextDim, current);
+                sidebarFocused = sidebarFocused || result.focused;
+                if (result.activated) {
+                    pending_ = [this, &app, pageId, current] {
+                        if (!current) report(app, session_->openTopLevel(pageId));
+                        pageChanged_ = !current;
+                        focusContent_ = true;
+                    };
                 }
                 if (current && pageChanged_) ImGui::SetScrollHereY(0.5f);
-            }
+            };
+            if (hasRootContent()) pageRow("##root", session_->root().title, "");
+            for (const auto& link : links) pageRow(link.pageId.c_str(), link.label, link.pageId);
+            sidebarHadFocus_ = sidebarFocused;
             ui::holdFocusRequests(false);
             ImGui::EndChild();
             ImGui::SameLine();
@@ -122,7 +141,13 @@ public:
             ImGui::SetScrollY(0);
             pageChanged_ = false;
             ui::focusNextRow();
+        } else if (focusContent_) {
+            const auto remembered = lastFieldFocus_.find(session_->currentPage().id);
+            if (remembered != lastFieldFocus_.end()) ui::restoreFocus(remembered->second);
+            else ui::focusNextRow();
         }
+        focusContent_ = false;
+        canLeaveFields_ = sidebar;
         const auto& page = session_->currentPage();
         drawNodes(app, page.nodes, sidebar && crumbs.size() <= 1 && page.id.empty());
         if (page.nodes.empty()) ui::dimText(tr("Nothing here."));
@@ -231,6 +256,11 @@ private:
 
     void trackFocus(const UiNode& node, const ui::RowResult& result) {
         if (!result.focused) return;
+        if (result.id) lastFieldFocus_[session_->currentPage().id] = result.id;
+        // Left on a field that does not use left/right goes back to the page list.
+        const bool usesLeftRight = (node.kind == WidgetKind::Integer || node.kind == WidgetKind::Float ||
+                                    node.kind == WidgetKind::Segmented) && node.editable();
+        fieldCouldLeave_ = canLeaveFields_ && !usesLeftRight;
         focusedHelp_ = node.help;
         focusedHasActions_ = !node.actions.empty();
         if (focusedHasActions_ && ui::pressed(ui::Button::Y)) {
@@ -557,6 +587,12 @@ private:
     bool pageChanged_ = true;
     std::string focusedHelp_;
     bool focusedHasActions_ = false;
+    bool focusSidebar_ = false;
+    bool focusContent_ = false;
+    bool canLeaveFields_ = false;
+    bool sidebarHadFocus_ = false;
+    bool fieldCouldLeave_ = false;
+    std::map<std::string, ImGuiID> lastFieldFocus_;
     std::optional<UiNode> choiceNode_;
     std::optional<UiNode> actionNode_;
     std::string choiceFilter_;
