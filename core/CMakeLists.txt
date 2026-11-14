@@ -19,6 +19,7 @@ add_library(savetinker_core STATIC
     src/repository.cpp
     src/script_host.cpp
     src/settings.cpp
+    src/smdh.cpp
     src/version.cpp
 )
 target_include_directories(savetinker_core PUBLIC include PRIVATE src)

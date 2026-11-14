@@ -9,12 +9,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NINTENDO_SWITCH)
     set(SAVETINKER_PLATFORM switch)
+elseif(NINTENDO_3DS)
+    set(SAVETINKER_PLATFORM 3ds)
 else()
     set(SAVETINKER_PLATFORM pc)
 endif()
 
 include(CMakeDependentOption)
-cmake_dependent_option(SAVETINKER_BUILD_TESTS "Build unit tests" ON "NOT NINTENDO_SWITCH" OFF)
+cmake_dependent_option(SAVETINKER_BUILD_TESTS "Build unit tests" ON "NOT NINTENDO_SWITCH;NOT NINTENDO_3DS" OFF)
 
 add_subdirectory(third_party)
 add_subdirectory(core)
@@ -31,6 +33,6 @@ if(SAVETINKER_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-if(NOT NINTENDO_SWITCH)
+if(NOT NINTENDO_SWITCH AND NOT NINTENDO_3DS)
     add_subdirectory(tools/cli)
 endif()

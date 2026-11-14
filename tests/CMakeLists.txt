@@ -17,6 +17,7 @@ add_executable(savetinker_tests
     test_pc_platform.cpp
     test_repository.cpp
     test_script_host.cpp
+    test_smdh.cpp
     test_version.cpp
 )
 target_link_libraries(savetinker_tests PRIVATE savetinker_platform doctest)
