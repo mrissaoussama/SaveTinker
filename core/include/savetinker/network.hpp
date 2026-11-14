@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -44,6 +45,8 @@ public:
 
     std::vector<RepoStatus> refresh(const std::vector<RepoEntry>& repos, RepoCatalog& catalog);
     std::vector<RepoStatus> loadCached(const std::vector<RepoEntry>& repos, RepoCatalog& catalog) const;
+    // True when an enabled repo was never downloaded or its copy is older than `maxAge`.
+    bool cacheStale(const std::vector<RepoEntry>& repos, std::chrono::hours maxAge) const;
 
     // Downloads an editor package and checks its size and SHA-256 when the repo lists them.
     std::expected<Bytes, std::string> downloadEditor(const RepoEditorEntry& editor, const ProgressCallback& progress = {});

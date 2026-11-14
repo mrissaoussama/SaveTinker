@@ -94,6 +94,15 @@ std::vector<RepoStatus> RepoManager::refresh(const std::vector<RepoEntry>& repos
     return statuses;
 }
 
+bool RepoManager::cacheStale(const std::vector<RepoEntry>& repos, std::chrono::hours maxAge) const {
+    return std::ranges::any_of(repos, [&](const RepoEntry& repo) {
+        if (!repo.enabled) return false;
+        std::error_code error;
+        const auto written = fs::last_write_time(cachePath(repo.url), error);
+        return error || fs::file_time_type::clock::now() - written > maxAge;
+    });
+}
+
 std::vector<RepoStatus> RepoManager::loadCached(const std::vector<RepoEntry>& repos, RepoCatalog& catalog) const {
     std::vector<RepoStatus> statuses;
     for (const auto& repo : repos) {

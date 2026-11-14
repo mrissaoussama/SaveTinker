@@ -65,6 +65,20 @@ TEST_CASE("repo refresh downloads, caches and falls back offline") {
     CHECK(manager.loadCached({{"https://a.example/repo.json"}}, cachedOnly)[0].editorCount == 1);
 }
 
+TEST_CASE("repo cache counts as stale when missing or old") {
+    test::TempDir dir;
+    FakeHttpClient client;
+    client.serve("https://a.example/repo.json", repoJson());
+    st::RepoManager manager(client, dir.path());
+    const std::vector<st::RepoEntry> repos = {{"https://a.example/repo.json"}};
+    CHECK(manager.cacheStale(repos, std::chrono::hours(24)));
+    st::RepoCatalog catalog;
+    manager.refresh(repos, catalog);
+    CHECK_FALSE(manager.cacheStale(repos, std::chrono::hours(24)));
+    CHECK(manager.cacheStale(repos, std::chrono::hours(-1)));
+    CHECK_FALSE(manager.cacheStale({{"https://off.example/repo.json", false}}, std::chrono::hours(24)));
+}
+
 TEST_CASE("bad statuses and bad json are errors") {
     test::TempDir dir;
     FakeHttpClient client;

@@ -134,9 +134,15 @@ private:
                             ui::color::Warning);
         }
         for (const auto& title : titles) {
-            const auto installed = app.editors().forGame(title.info.platform, title.info.titleId).size();
-            const auto inRepos = app.catalog().findEditors(title.info.platform, title.info.titleId).size();
-            if (gameRow(app, title, installed, inRepos)) app.push(makeGameScreen(title.info.titleId));
+            const auto& platform = title.info.platform;
+            const auto& titleId = title.info.titleId;
+            const auto installed = std::ranges::count_if(app.editors().forGame(platform, titleId), [&](const st::InstalledEditorInfo& editor) {
+                return !editor.manifest.findGame(platform, titleId)->generic();
+            });
+            const auto inRepos = std::ranges::count_if(app.catalog().findEditors(platform, titleId), [&](const st::EditorMatch& match) {
+                return !match.editor->findGame(platform, titleId)->generic();
+            });
+            if (gameRow(app, title, static_cast<std::size_t>(installed), static_cast<std::size_t>(inRepos))) app.push(makeGameScreen(title.info.titleId));
         }
     }
 

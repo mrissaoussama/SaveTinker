@@ -50,7 +50,8 @@ App::App(System& system, bool consoleGlyphs)
     reloadTitles();
     screens_.push_back(makeMainScreen());
     ui::focusNextRow();
-    if (settings_.checkUpdatesOnStart && updater_.configured()) checkAppUpdate(true);
+    if (settings_.checkUpdatesOnStart && repoManager_.cacheStale(settings_.repos, std::chrono::hours(24))) refreshRepos(false);
+    else if (settings_.checkUpdatesOnStart && updater_.configured()) checkAppUpdate(true);
 }
 
 App::~App() = default;
