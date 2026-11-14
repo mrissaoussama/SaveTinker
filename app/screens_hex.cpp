@@ -4,6 +4,7 @@
 #include <ranges>
 
 #include "app.hpp"
+#include "i18n.hpp"
 #include "save_flow.hpp"
 #include "savetinker/checksum.hpp"
 #include "ui.hpp"
@@ -26,20 +27,20 @@ public:
         }
         document_ = std::make_unique<st::Document>(std::move(*document));
         files_ = document_->fileNames();
-        if (files_.empty()) error_ = "This save contains no files.";
+        if (files_.empty()) error_ = tr("This save contains no files.");
     }
 
-    std::string title() const override { return "Hex editor"; }
+    std::string title() const override { return tr("Hex editor"); }
 
     std::vector<Hint> hints(const App&) const override {
-        if (!document_) return {{"B", "Back"}};
-        return {{"A", "Edit"}, {"Y", "Menu"}, {"X", "Find next"}, {"L", "Page"}, {"R", "Page"},
-                {"ZL", "Undo"}, {"ZR", "Redo"}, {"+", "Write"}, {"B", "Back"}};
+        if (!document_) return {{"B", tr("Back")}};
+        return {{"A", tr("Edit")}, {"Y", tr("Menu")}, {"X", tr("Find next")}, {"L", tr("Page")}, {"R", tr("Page")},
+                {"ZL", tr("Undo")}, {"ZR", tr("Redo")}, {"+", tr("Write")}, {"B", tr("Back")}};
     }
 
     bool requestClose(App& app) override {
         if (document_ && document_->isDirty()) {
-            app.confirm("Discard changes?", "Your edits have not been written to the save.", "Discard", [](App& app) { app.pop(); });
+            app.confirm(tr("Discard changes?"), tr("Your edits have not been written to the save."), tr("Discard"), [](App& app) { app.pop(); });
             return false;
         }
         return true;
@@ -47,7 +48,7 @@ public:
 
     void draw(App& app) override {
         if (!error_.empty()) {
-            ui::emptyState("Cannot open the save", error_);
+            ui::emptyState(tr("Cannot open the save"), error_);
             return;
         }
         const auto& buffer = document_->file(file());
@@ -56,7 +57,7 @@ public:
 
         ui::dimText(std::format("{}   {}   {} of {}", file(), ui::formatSize(buffer.size()),
                                 fileIndex_ + 1, files_.size()) +
-                    (compare_ ? std::format("   comparing with backup: {} differences", differences_.size()) : ""));
+                    (compare_ ? trf("   comparing with backup: {} differences", differences_.size()) : ""));
 
         const float inspectorWidth = ImGui::GetFontSize() * 13;
         ImGui::BeginChild("##grid", ImVec2(ImGui::GetContentRegionAvail().x - inspectorWidth, 0), ImGuiChildFlags_None,
@@ -154,7 +155,7 @@ private:
     }
 
     void drawInspector(const st::ByteBuffer& buffer) {
-        ui::sectionTitle(std::format("Offset 0x{:X}", cursor_));
+        ui::sectionTitle(trf("Offset 0x{:X}", cursor_));
         if (const auto* field = markedField(cursor_)) {
             ImGui::PushStyleColor(ImGuiCol_Text, ui::color::Accent);
             ImGui::TextUnformatted((field->label + " (" + field->type + ")").c_str());
@@ -182,7 +183,7 @@ private:
         line("f32", cursor_ + 4 <= buffer.size() ? std::format("{:.6g}", buffer.readFloat(cursor_)) : "-");
         line("f64", cursor_ + 8 <= buffer.size() ? std::format("{:.6g}", buffer.readDouble(cursor_)) : "-");
         ImGui::Spacing();
-        ui::dimText("Big endian");
+        ui::dimText(tr("Big endian"));
         line("u16", read.operator()<std::uint16_t>(st::Endian::Big));
         line("u32", read.operator()<std::uint32_t>(st::Endian::Big));
         ImGui::Spacing();
@@ -206,35 +207,35 @@ private:
             if (chosen) ImGui::CloseCurrentPopup();
             return chosen;
         };
-        if (item("##goto", "Go to offset")) {
-            app.promptText({"Offset (hex)", std::format("{:X}", cursor_), TextKind::Hex, 16}, [this](App& app, std::string text) {
+        if (item("##goto", tr("Go to offset"))) {
+            app.promptText({tr("Offset (hex)"), std::format("{:X}", cursor_), TextKind::Hex, 16}, [this](App& app, std::string text) {
                 try {
                     const auto offset = std::stoull(text, nullptr, 16);
-                    if (offset >= document_->file(file()).size()) return app.toast("Offset is past the end of the file", true);
+                    if (offset >= document_->file(file()).size()) return app.toast(tr("Offset is past the end of the file"), true);
                     cursor_ = offset;
                     followCursor_ = true;
                 } catch (const std::exception&) {
-                    app.toast("Not a hex number", true);
+                    app.toast(tr("Not a hex number"), true);
                 }
             });
         }
-        if (item("##findhex", "Find bytes (hex)")) search(app, true);
-        if (item("##findtext", "Find text")) search(app, false);
-        if (files_.size() > 1 && item("##nextfile", "Next file", files_[(fileIndex_ + 1) % files_.size()])) {
+        if (item("##findhex", tr("Find bytes (hex)"))) search(app, true);
+        if (item("##findtext", tr("Find text"))) search(app, false);
+        if (files_.size() > 1 && item("##nextfile", tr("Next file"), files_[(fileIndex_ + 1) % files_.size()])) {
             fileIndex_ = (fileIndex_ + 1) % files_.size();
             cursor_ = 0;
             compare_.reset();
             differences_.clear();
         }
-        if (item("##mark", "Mark field here")) markField(app);
-        if (item("##signature", "Use bytes here as save signature")) useAsSignature(app);
-        if (item("##draft", "Editor creator", std::format("{} fields", editorDraft(app, target_.save.titleId).fields.size())))
+        if (item("##mark", tr("Mark field here"))) markField(app);
+        if (item("##signature", tr("Use bytes here as save signature"))) useAsSignature(app);
+        if (item("##draft", tr("Editor creator"), trf("{} fields", editorDraft(app, target_.save.titleId).fields.size())))
             app.push(makeDraftScreen(target_.save.titleId));
-        if (item("##compare", "Compare with latest backup")) compareWithBackup(app);
+        if (item("##compare", tr("Compare with latest backup"))) compareWithBackup(app);
         if (compare_) {
-            if (item("##nextdiff", "Next difference")) jumpToDifference(true);
-            if (item("##prevdiff", "Previous difference")) jumpToDifference(false);
-            if (item("##stopcompare", "Stop comparing")) {
+            if (item("##nextdiff", tr("Next difference"))) jumpToDifference(true);
+            if (item("##prevdiff", tr("Previous difference"))) jumpToDifference(false);
+            if (item("##stopcompare", tr("Stop comparing"))) {
                 compare_.reset();
                 differences_.clear();
             }
@@ -268,78 +269,78 @@ private:
     }
 
     void useAsSignature(App& app) {
-        app.promptText({"Signature length in bytes", "4", TextKind::Number, 3}, [this](App& app, std::string text) {
+        app.promptText({tr("Signature length in bytes"), "4", TextKind::Number, 3}, [this](App& app, std::string text) {
             std::size_t length = 0;
             try {
                 length = std::stoul(text);
             } catch (const std::exception&) {
             }
             const auto& buffer = document_->file(file());
-            if (length == 0 || length > 64 || cursor_ + length > buffer.size()) return app.toast("Use 1 to 64 bytes inside the file", true);
+            if (length == 0 || length > 64 || cursor_ + length > buffer.size()) return app.toast(tr("Use 1 to 64 bytes inside the file"), true);
             auto& draft = editorDraft(app, target_.save.titleId);
             draft.detectFile = file();
             draft.magicOffset = cursor_;
             draft.magic = buffer.readBytes(cursor_, length);
             storeEditorDraft(app, target_.save.titleId);
-            app.toast("Signature set to " + st::toHex(draft.magic));
+            app.toast(trf("Signature set to {}", st::toHex(draft.magic)));
         });
     }
 
     void editAtCursor(App& app) {
         const auto& buffer = document_->file(file());
         if (cursor_ >= buffer.size()) return;
-        app.promptText({std::format("Bytes at 0x{:X} (hex, several allowed)", cursor_), std::format("{:02X}", buffer.bytes()[cursor_]),
+        app.promptText({trf("Bytes at 0x{:X} (hex, several allowed)", cursor_), std::format("{:02X}", buffer.bytes()[cursor_]),
                         TextKind::Hex, 64},
                        [this](App& app, std::string text) {
                            try {
                                const auto bytes = st::fromHex(text);
                                if (bytes.empty()) return;
                                if (cursor_ + bytes.size() > document_->file(file()).size())
-                                   return app.toast("Not enough room before the end of the file", true);
-                               document_->beginTransaction(std::format("Bytes at 0x{:X}", cursor_));
+                                   return app.toast(tr("Not enough room before the end of the file"), true);
+                               document_->beginTransaction(trf("Bytes at 0x{:X}", cursor_));
                                document_->write(file(), cursor_, bytes);
                                document_->commitTransaction();
                                cursor_ = std::min(cursor_ + bytes.size(), document_->file(file()).size() - 1);
                                refreshDifferences();
                            } catch (const std::exception&) {
-                               app.toast("Use hex digits like 0A FF", true);
+                               app.toast(tr("Use hex digits like 0A FF"), true);
                            }
                        });
     }
 
     void search(App& app, bool hex) {
-        app.promptText({hex ? "Find bytes (hex)" : "Find text", lastSearchText_, hex ? TextKind::Hex : TextKind::Text, 128},
+        app.promptText({hex ? tr("Find bytes (hex)") : tr("Find text"), lastSearchText_, hex ? TextKind::Hex : TextKind::Text, 128},
                        [this, hex](App& app, std::string text) {
                            try {
                                lastSearch_ = hex ? st::fromHex(text) : st::Bytes(text.begin(), text.end());
                                lastSearchText_ = text;
                            } catch (const std::exception&) {
-                               return app.toast("Use hex digits like 0A FF", true);
+                               return app.toast(tr("Use hex digits like 0A FF"), true);
                            }
                            findNext(app, true);
                        });
     }
 
     void findNext(App& app, bool fromCursor = false) {
-        if (lastSearch_.empty()) return app.toast("Search first from the menu", true);
+        if (lastSearch_.empty()) return app.toast(tr("Search first from the menu"), true);
         const auto& buffer = document_->file(file());
         const std::size_t start = fromCursor ? cursor_ : cursor_ + 1;
         auto found = buffer.find(lastSearch_, start);
         if (!found) found = buffer.find(lastSearch_, 0);
-        if (!found) return app.toast("Not found", true);
+        if (!found) return app.toast(tr("Not found"), true);
         cursor_ = *found;
         followCursor_ = true;
     }
 
     void compareWithBackup(App& app) {
         const auto records = app.backups().list(target_.save.titleId, target_.save.slotName());
-        if (records.empty()) return app.toast("This save has no backups yet", true);
+        if (records.empty()) return app.toast(tr("This save has no backups yet"), true);
         const auto path = records.front().directory / "files" / file();
         std::ifstream stream(path, std::ios::binary);
-        if (!stream) return app.toast("The latest backup does not contain " + file(), true);
+        if (!stream) return app.toast(trf("The latest backup does not contain {}", file()), true);
         compare_ = st::Bytes(std::istreambuf_iterator<char>(stream), {});
         refreshDifferences();
-        app.toast(std::format("{} differences from {}", differences_.size(), records.front().createdAt));
+        app.toast(trf("{} differences from {}", differences_.size(), records.front().createdAt));
     }
 
     void refreshDifferences() {
@@ -365,11 +366,11 @@ private:
     }
 
     void write(App& app) {
-        auto written = writeSave(app, target_, *document_, "before hex edit");
-        if (!written) return app.showMessage("Save not written", written.error());
+        auto written = writeSave(app, target_, *document_, tr("before hex edit"));
+        if (!written) return app.showMessage(tr("Save not written"), written.error());
         document_->markSaved();
         app.reloadTitles();
-        app.toast("Save written");
+        app.toast(tr("Save written"));
     }
 
     SaveTarget target_;

@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "i18n.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -43,6 +44,7 @@ App::App(System& system, bool consoleGlyphs)
       updater_(*http_, SAVETINKER_UPDATE_REPO, SAVETINKER_VERSION, kAppAsset) {
     std::error_code ignored;
     std::filesystem::create_directories(editors_.libraryDir(), ignored);
+    applyLanguage();
     repoStatuses_ = repoManager_.loadCached(settings_.repos, catalog_);
     reloadTitles();
     screens_.push_back(makeMainScreen());
@@ -53,7 +55,7 @@ App::App(System& system, bool consoleGlyphs)
 App::~App() = default;
 
 void App::saveSettings() {
-    if (!st::saveSettings(settingsPath_, settings_)) toast("Could not save settings", true);
+    if (!st::saveSettings(settingsPath_, settings_)) toast(tr("Could not save settings"), true);
 }
 
 void App::reloadTitles() {
@@ -93,12 +95,16 @@ std::string App::userName(const std::string& userId) const {
 std::string App::saveLabel(const st::SaveInfo& save) const {
     switch (save.kind) {
     case st::SaveKind::Account: return userName(save.userId);
-    case st::SaveKind::Device: return "Device (shared)";
-    case st::SaveKind::Bcat: return "BCAT data";
-    case st::SaveKind::Cache: return "Cache";
-    case st::SaveKind::System: return "System";
+    case st::SaveKind::Device: return tr("Device (shared)");
+    case st::SaveKind::Bcat: return tr("BCAT data");
+    case st::SaveKind::Cache: return tr("Cache");
+    case st::SaveKind::System: return tr("System");
     }
-    return "Save";
+    return tr("Save");
+}
+
+void App::applyLanguage() {
+    loadTranslations(language(), platform_->dataRoot());
 }
 
 std::string App::language() const {
@@ -126,7 +132,7 @@ void App::replaceTop(std::unique_ptr<Screen> screen) {
 
 void App::runTask(std::string label, std::function<std::function<void(App&)>(Progress&)> work) {
     if (task_) {
-        toast("Another task is still running", true);
+        toast(tr("Another task is still running"), true);
         return;
     }
     auto progress = std::make_shared<Progress>();
@@ -135,7 +141,7 @@ void App::runTask(std::string label, std::function<std::function<void(App&)>(Pro
             return work(*progress);
         } catch (const std::exception& error) {
             std::string message = error.what();
-            return [message](App& app) { app.showMessage("Something went wrong", message); };
+            return [message](App& app) { app.showMessage(tr("Something went wrong"), message); };
         }
     });
     task_ = Task{std::move(label), std::move(progress), std::move(future)};
@@ -167,36 +173,36 @@ bool App::modalOpen() const {
 
 void App::refreshRepos(bool notify) {
     auto repos = settings_.repos;
-    runTask("Refreshing repositories", [this, repos, notify](Progress&) -> std::function<void(App&)> {
+    runTask(tr("Refreshing repositories"), [this, repos, notify](Progress&) -> std::function<void(App&)> {
         st::RepoCatalog fresh;
         auto statuses = repoManager_.refresh(repos, fresh);
         return [fresh = std::move(fresh), statuses = std::move(statuses), notify](App& app) mutable {
             app.catalog_ = std::move(fresh);
             app.repoStatuses_ = std::move(statuses);
             const auto failed = std::ranges::count_if(app.repoStatuses_, [](const st::RepoStatus& s) { return !s.error.empty(); });
-            if (notify) app.toast(failed ? std::format("{} repositories could not be reached", failed) : "Repositories updated", failed > 0);
+            if (notify) app.toast(failed ? trf("{} repositories could not be reached", failed) : tr("Repositories updated"), failed > 0);
         };
     });
 }
 
 void App::checkAppUpdate(bool silent) {
-    runTask("Checking for updates", [this, silent](Progress&) -> std::function<void(App&)> {
+    runTask(tr("Checking for updates"), [this, silent](Progress&) -> std::function<void(App&)> {
         auto result = updater_.check();
         return [result = std::move(result), silent](App& app) {
             if (!result) {
-                if (!silent) app.showMessage("Update check failed", result.error());
+                if (!silent) app.showMessage(tr("Update check failed"), result.error());
                 return;
             }
             if (!*result) {
-                if (!silent) app.toast("SaveTinker is up to date");
+                if (!silent) app.toast(tr("SaveTinker is up to date"));
                 return;
             }
             const auto release = **result;
             if (silent && release.version == app.settings().skippedVersion) return;
-            app.confirm("Update available: " + release.version,
-                        release.notes.empty() ? "A new version is available." : release.notes, "Install",
+            app.confirm(trf("Update available: {}", release.version),
+                        release.notes.empty() ? tr("A new version is available.") : release.notes, tr("Install"),
                         [release](App& app) {
-                            app.runTask("Downloading update", [&app, release](Progress& progress) -> std::function<void(App&)> {
+                            app.runTask(tr("Downloading update"), [&app, release](Progress& progress) -> std::function<void(App&)> {
                                 auto installed = app.updater().install(release, app.system().appPath(),
                                                                        [&progress](std::uint64_t done, std::uint64_t total) {
                                                                            progress.done = done;
@@ -204,11 +210,11 @@ void App::checkAppUpdate(bool silent) {
                                                                        });
                                 return [installed](App& app) {
                                     if (!installed) {
-                                        app.showMessage("Update failed", installed.error());
+                                        app.showMessage(tr("Update failed"), installed.error());
                                         return;
                                     }
                                     app.system().requestRestart();
-                                    app.showMessage("Update installed", "Restart SaveTinker to use the new version.");
+                                    app.showMessage(tr("Update installed"), tr("Restart SaveTinker to use the new version."));
                                 };
                             });
                         });
@@ -306,7 +312,7 @@ void App::frame() {
     } catch (const std::exception& error) {
         // Keep the app alive; a broken screen is closed and the error shown.
         if (screens_.size() > 1) pop();
-        showMessage("Something went wrong", error.what());
+        showMessage(tr("Something went wrong"), error.what());
     }
 
     if (!modalOpen()) handleBack();
@@ -404,7 +410,7 @@ void App::drawPrompt() {
         std::snprintf(buffer, sizeof(buffer), "%s", prompt_->buffer.c_str());
         const bool submitted = ImGui::InputText("##value", buffer, sizeof(buffer), flags);
         prompt_->buffer = buffer;
-        if (submitted || ui::primaryButton("OK")) {
+        if (submitted || ui::primaryButton(trc("OK"))) {
             auto onDone = std::move(prompt_->onDone);
             auto value = prompt_->buffer;
             close = true;
@@ -415,7 +421,7 @@ void App::drawPrompt() {
             return;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (ImGui::Button(trc("Cancel")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             close = true;
             ImGui::CloseCurrentPopup();
         }
@@ -453,10 +459,10 @@ void App::drawDialog() {
                 done = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel") || ui::pressed(ui::Button::B)) done = true;
+            if (ImGui::Button(trc("Cancel")) || ui::pressed(ui::Button::B)) done = true;
         } else {
             if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-            if (ui::primaryButton("OK") || ui::pressed(ui::Button::B)) done = true;
+            if (ui::primaryButton(trc("OK")) || ui::pressed(ui::Button::B)) done = true;
         }
         if (done) {
             ImGui::CloseCurrentPopup();

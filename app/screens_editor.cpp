@@ -3,6 +3,7 @@
 #include <format>
 
 #include "app.hpp"
+#include "i18n.hpp"
 #include "save_flow.hpp"
 #include "savetinker/editor_session.hpp"
 #include "ui.hpp"
@@ -48,14 +49,14 @@ public:
     std::string title() const override { return editor_.manifest.name; }
 
     std::vector<Hint> hints(const App&) const override {
-        if (!session_) return {{"B", "Back"}};
-        std::vector<Hint> hints = {{"A", "Edit"}};
-        if (focusedHasActions_) hints.push_back({"Y", "Actions"});
-        if (!session_->topLevelLinks().empty()) hints.push_back({"L", "Page"}), hints.push_back({"R", "Page"});
-        hints.push_back({"ZL", "Undo"});
-        hints.push_back({"ZR", "Redo"});
-        hints.push_back({"+", "Write"});
-        hints.push_back({"B", "Back"});
+        if (!session_) return {{"B", tr("Back")}};
+        std::vector<Hint> hints = {{"A", tr("Edit")}};
+        if (focusedHasActions_) hints.push_back({"Y", tr("Actions")});
+        if (!session_->topLevelLinks().empty()) hints.push_back({"L", tr("Page")}), hints.push_back({"R", tr("Page")});
+        hints.push_back({"ZL", tr("Undo")});
+        hints.push_back({"ZR", tr("Redo")});
+        hints.push_back({"+", tr("Write")});
+        hints.push_back({"B", tr("Back")});
         return hints;
     }
 
@@ -65,7 +66,7 @@ public:
             return false;
         }
         if (document_ && document_->isDirty()) {
-            app.confirm("Discard changes?", "Your edits have not been written to the save.", "Discard", [](App& app) { app.pop(); });
+            app.confirm(tr("Discard changes?"), tr("Your edits have not been written to the save."), tr("Discard"), [](App& app) { app.pop(); });
             return false;
         }
         return true;
@@ -73,12 +74,12 @@ public:
 
     void draw(App& app) override {
         if (!error_.empty()) {
-            ui::emptyState("This editor could not open the save", error_);
+            ui::emptyState(tr("This editor could not open the save"), error_);
             return;
         }
         if (!session_) return;
         if (detectWarning_) {
-            ui::wrappedText("This save does not look like what the editor expects. Changes may damage it.", ui::color::Warning);
+            ui::wrappedText(tr("This save does not look like what the editor expects. Changes may damage it."), ui::color::Warning);
         }
 
         if (!app.modalOpen()) handleShortcuts(app);
@@ -119,7 +120,7 @@ public:
         }
         const auto& page = session_->currentPage();
         drawNodes(app, page.nodes, sidebar && crumbs.size() <= 1 && page.id.empty());
-        if (page.nodes.empty()) ui::dimText("Nothing here.");
+        if (page.nodes.empty()) ui::dimText(tr("Nothing here."));
         ImGui::EndChild();
 
         drawStatusLine(app);
@@ -200,7 +201,7 @@ private:
     }
 
     void report(App& app, const std::expected<void, std::string>& result, bool quiet = false) {
-        if (!result && !quiet) app.showMessage("Editor error", result.error());
+        if (!result && !quiet) app.showMessage(tr("Editor error"), result.error());
         else if (!result) app.toast(result.error(), true);
     }
 
@@ -258,12 +259,12 @@ private:
             }
             if (result.activated) {
                 std::string range;
-                if (node.min && node.max) range = std::format(" ({} to {})", *node.min, *node.max);
+                if (node.min && node.max) range = trf(" ({} to {})", *node.min, *node.max);
                 app.promptText({node.label + range, formatNumber(node), node.hex ? TextKind::Hex : TextKind::Number, 32},
                                [this, node](App& app, std::string text) {
                                    if (node.hex && !text.starts_with("0x")) text = "0x" + text;
                                    auto value = parseNumber(node, text);
-                                   if (!value) return app.toast("Not a valid number", true);
+                                   if (!value) return app.toast(tr("Not a valid number"), true);
                                    edit(app, node, *value);
                                });
             }
@@ -287,7 +288,7 @@ private:
         }
         case WidgetKind::Choice: {
             const auto selected = node.selectedOption();
-            const std::string value = selected ? node.options[*selected].label : "Unknown (" + st::uiValueToString(node.value) + ")";
+            const std::string value = selected ? node.options[*selected].label : trf("Unknown ({})", st::uiValueToString(node.value));
             const auto result = ui::row("##c", label, value + "  \xE2\x96\xBE", selected ? ui::color::Text : ui::color::Warning);
             trackFocus(node, result);
             if (result.activated && node.editable()) {
@@ -360,7 +361,7 @@ private:
                 ImGui::BeginChild("##popupbody", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_NavFlattened);
                 drawNodes(app, node.children, false);
                 ImGui::EndChild();
-                if (ImGui::Button("Close") || ui::pressed(ui::Button::B)) ImGui::CloseCurrentPopup();
+                if (ImGui::Button(trc("Close")) || ui::pressed(ui::Button::B)) ImGui::CloseCurrentPopup();
                 ImGui::EndPopup();
             }
             break;
@@ -411,9 +412,9 @@ private:
         const auto& node = *choiceNode_;
         ui::sectionTitle(node.label);
         if (node.options.size() > 12) {
-            if (ui::row("##filter", choiceFilter_.empty() ? "Search..." : "Search: " + choiceFilter_, "", ui::color::Accent).activated ||
+            if (ui::row("##filter", choiceFilter_.empty() ? tr("Search...") : trf("Search: {}", choiceFilter_), "", ui::color::Accent).activated ||
                 ui::pressed(ui::Button::X))
-                app.promptText({"Search " + node.label, choiceFilter_, TextKind::Text, 64},
+                app.promptText({trf("Search {}", node.label), choiceFilter_, TextKind::Text, 64},
                                [this](App&, std::string text) { choiceFilter_ = std::move(text); });
         }
         ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
@@ -495,7 +496,7 @@ private:
             ImGui::GetForegroundDrawList()->AddText(app.footerTextPosition(), ui::color::TextDim, focusedHelp_.c_str());
         if (document_ && document_->isDirty()) {
             auto* draw = ImGui::GetForegroundDrawList();
-            const char* text = "\xE2\x97\x8F Unsaved";
+            const char* text = trc("\xE2\x97\x8F Unsaved");
             const float width = ImGui::CalcTextSize(text).x;
             draw->AddText(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f - width * 0.5f, ImGui::GetFontSize() * 0.5f), ui::color::Modified, text);
         }
@@ -509,8 +510,8 @@ private:
         ImGui::SetNextWindowPos(ImGui::GetIO().DisplaySize * 0.5f, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x * 0.7f, ImGui::GetIO().DisplaySize.y * 0.6f));
         if (!ImGui::BeginPopup("##log")) return;
-        ui::sectionTitle("Editor log");
-        if (host_->log().empty()) ui::dimText("The editor has not printed anything.");
+        ui::sectionTitle(tr("Editor log"));
+        if (host_->log().empty()) ui::dimText(tr("The editor has not printed anything."));
         for (const auto& entry : host_->log())
             ui::wrappedText(entry.message, entry.level == st::LogEntry::Level::Warning ? ui::color::Warning : ui::color::Text);
         ImGui::EndPopup();
@@ -518,18 +519,18 @@ private:
 
     void write(App& app) {
         if (auto prepared = host_->beforeSave(); !prepared) {
-            app.showMessage("The editor could not prepare the save", prepared.error());
+            app.showMessage(tr("The editor could not prepare the save"), prepared.error());
             return;
         }
-        auto written = writeSave(app, target_, *document_, "before edit with " + editor_.manifest.name);
+        auto written = writeSave(app, target_, *document_, trf("before edit with {}", editor_.manifest.name));
         if (!written) {
-            app.showMessage("Save not written", written.error());
+            app.showMessage(tr("Save not written"), written.error());
             return;
         }
         document_->markSaved();
         app.reloadTitles();
         report(app, session_->rebuild());
-        app.toast("Save written");
+        app.toast(tr("Save written"));
     }
 
     SaveTarget target_;

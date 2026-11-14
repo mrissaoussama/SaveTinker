@@ -102,6 +102,8 @@ public:
     bool modalOpen() const;
     float scale() const { return scale_; }
     std::string language() const;
+    // Reloads UI translations after the language setting changes.
+    void applyLanguage();
     // Left end of the footer line, where screens can show context help.
     ImVec2 footerTextPosition() const { return footerLeft_; }
 

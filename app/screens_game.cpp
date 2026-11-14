@@ -1,6 +1,7 @@
 #include <format>
 
 #include "app.hpp"
+#include "i18n.hpp"
 #include "save_flow.hpp"
 #include "savetinker/manifest.hpp"
 #include "ui.hpp"
@@ -16,13 +17,13 @@ public:
     std::string title() const override { return name_; }
 
     std::vector<Hint> hints(const App&) const override {
-        return {{"A", "Select"}, {"Y", "Back up all"}, {"B", "Back"}};
+        return {{"A", tr("Select")}, {"Y", tr("Back up all")}, {"B", tr("Back")}};
     }
 
     void draw(App& app) override {
         const auto* entry = app.findTitle(titleId_);
         if (!entry) {
-            ui::emptyState("This game has no saves anymore");
+            ui::emptyState(tr("This game has no saves anymore"));
             return;
         }
         name_ = entry->info.name;
@@ -31,9 +32,9 @@ public:
         drawInfo(app, *entry);
         const auto running = app.platform().runningTitleId();
         if (running && (running->empty() || *running == titleId_))
-            ui::wrappedText("This game is running. Close it from the HOME menu before editing or restoring.", ui::color::Warning);
+            ui::wrappedText(tr("This game is running. Close it from the HOME menu before editing or restoring."), ui::color::Warning);
 
-        ui::sectionTitle("Saves");
+        ui::sectionTitle(tr("Saves"));
         for (const auto& save : entry->saves) {
             const std::string id = save.slotName();
             if (ui::row(id.c_str(), app.saveLabel(save), ui::formatSize(save.size)).activated) {
@@ -44,31 +45,31 @@ public:
         drawSaveActions(app, *entry);
 
         const auto installed = app.editors().forGame(entry->info.platform, titleId_);
-        ui::sectionTitle("Editors");
-        if (installed.empty()) ui::dimText("No editor installed for this game. Use the hex editor or look in your repositories.");
+        ui::sectionTitle(tr("Editors"));
+        if (installed.empty()) ui::dimText(tr("No editor installed for this game. Use the hex editor or look in your repositories."));
         for (const auto& editor : installed) {
             const auto* game = editor.manifest.findGame(entry->info.platform, titleId_);
             const bool supported = !game || entry->info.displayVersion.empty() || game->supportsVersion(entry->info.displayVersion);
             if (ui::row(("ed-" + editor.manifest.id).c_str(), editor.manifest.name,
-                        supported ? "v" + editor.manifest.version : "Not tested with v" + entry->info.displayVersion,
+                        supported ? "v" + editor.manifest.version : trf("Not tested with v{}", entry->info.displayVersion),
                         supported ? ui::color::TextDim : ui::color::Warning)
                     .activated)
                 app.push(makeEditorDetailScreen(editor.manifest.id));
         }
-        if (ui::row("##creator", "Create an editor", hasEditorDraft(app, titleId_)
-                        ? std::format("draft, {} fields", editorDraft(app, titleId_).fields.size()) : "").activated)
+        if (ui::row("##creator", tr("Create an editor"), hasEditorDraft(app, titleId_)
+                        ? trf("draft, {} fields", editorDraft(app, titleId_).fields.size()) : "").activated)
             app.push(makeDraftScreen(titleId_));
 
         const auto matches = app.catalog().findEditors(entry->info.platform, titleId_, entry->info.displayVersion);
         if (!matches.empty()) {
-            ui::sectionTitle("Available in your repositories");
+            ui::sectionTitle(tr("Available in your repositories"));
             for (const auto& match : matches) {
                 const std::string id = match.repo->url + "/" + match.editor->id;
-                const std::string value = (match.versionSupported ? "" : "other version  \xC2\xB7  ") + match.repo->index.name;
+                const std::string value = (match.versionSupported ? match.repo->index.name : trf("other version  \xC2\xB7  {}", match.repo->index.name));
                 if (ui::row(id.c_str(), match.editor->name + "  v" + match.editor->version, value).activated)
                     app.push(makeRepoEditorScreen(match.repo->url, match.editor->id));
             }
-        } else if (ui::row("##search", "Search repositories again", "", ui::color::Accent).activated) {
+        } else if (ui::row("##search", tr("Search repositories again"), "", ui::color::Accent).activated) {
             app.refreshRepos(true);
         }
     }
@@ -94,21 +95,21 @@ private:
         if (!ImGui::BeginPopup("##saveactions")) return;
         ui::sectionTitle(app.saveLabel(selected_));
         for (const auto& editor : app.editors().forGame(entry.info.platform, titleId_)) {
-            if (ui::row(("open-" + editor.manifest.id).c_str(), "Edit with " + editor.manifest.name).activated) {
+            if (ui::row(("open-" + editor.manifest.id).c_str(), trf("Edit with {}", editor.manifest.name)).activated) {
                 ImGui::CloseCurrentPopup();
                 app.push(makeEditorScreen(app, selected_, editor));
             }
         }
-        if (ui::row("##hex", "Hex editor").activated) {
+        if (ui::row("##hex", tr("Hex editor")).activated) {
             ImGui::CloseCurrentPopup();
             app.push(makeHexScreen(app, selected_));
         }
-        if (ui::row("##backup", "Back up now").activated) {
+        if (ui::row("##backup", tr("Back up now")).activated) {
             ImGui::CloseCurrentPopup();
             backUp(app, selected_, entry.info.name);
         }
         const auto count = app.backups().list(titleId_, selected_.slotName()).size();
-        if (ui::row("##backups", "Backups", std::to_string(count)).activated) {
+        if (ui::row("##backups", tr("Backups"), std::to_string(count)).activated) {
             ImGui::CloseCurrentPopup();
             app.push(makeBackupsScreen(selected_));
         }
@@ -119,12 +120,12 @@ private:
     static void backUp(App& app, const st::SaveInfo& save, const std::string& name) {
         auto mount = app.platform().mount(save);
         if (!mount) {
-            app.showMessage("Cannot open the save", mount.error());
+            app.showMessage(tr("Cannot open the save"), mount.error());
             return;
         }
         auto record = app.backups().create(**mount, save, name, "manual");
-        if (record) app.toast("Backed up " + ui::formatSize(record->totalSize()));
-        else app.showMessage("Backup failed", record.error());
+        if (record) app.toast(trf("Backed up {}", ui::formatSize(record->totalSize())));
+        else app.showMessage(tr("Backup failed"), record.error());
     }
 
     void backUpAll(App& app, const TitleEntry& entry) {
@@ -132,7 +133,7 @@ private:
     }
 
     std::string titleId_;
-    std::string name_ = "Game";
+    std::string name_ = tr("Game");
     st::SaveInfo selected_;
 };
 
@@ -140,14 +141,14 @@ class BackupsScreen : public Screen {
 public:
     explicit BackupsScreen(st::SaveInfo save) : save_(std::move(save)) {}
 
-    std::string title() const override { return "Backups"; }
-    std::vector<Hint> hints(const App&) const override { return {{"A", "Select"}, {"B", "Back"}}; }
+    std::string title() const override { return tr("Backups"); }
+    std::vector<Hint> hints(const App&) const override { return {{"A", tr("Select")}, {"B", tr("Back")}}; }
 
     void draw(App& app) override {
         const auto records = app.backups().list(save_.titleId, save_.slotName());
         ui::dimText(app.saveLabel(save_) + "  \xC2\xB7  " + save_.titleId);
         if (records.empty()) {
-            ui::emptyState("No backups yet", "Backups are made automatically before SaveTinker writes a save.");
+            ui::emptyState(tr("No backups yet"), tr("Backups are made automatically before SaveTinker writes a save."));
             return;
         }
         for (const auto& record : records) {
@@ -161,33 +162,33 @@ public:
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 22, 0));
         if (ImGui::BeginPopup("##backupactions")) {
             ui::sectionTitle(selected_.createdAt);
-            if (ui::row("##restore", "Restore this backup").activated) {
+            if (ui::row("##restore", tr("Restore this backup")).activated) {
                 ImGui::CloseCurrentPopup();
                 auto record = selected_;
                 auto save = save_;
-                app.confirm("Restore backup?", "The current save will be replaced by the backup from " + record.createdAt +
-                                                   ". A backup of the current save is made first.",
-                            "Restore", [record, save](App& app) {
+                app.confirm(tr("Restore backup?"), trf("The current save will be replaced by the backup from {}. A backup of the current save is made first.",
+                                                       record.createdAt),
+                            tr("Restore"), [record, save](App& app) {
                                 auto mount = app.platform().mount(save);
-                                if (!mount) return app.showMessage("Cannot open the save", mount.error());
-                                if (auto safety = app.backups().create(**mount, save, record.titleName, "before restore"); !safety)
-                                    return app.showMessage("Restore cancelled", "Could not back up the current save: " + safety.error());
+                                if (!mount) return app.showMessage(tr("Cannot open the save"), mount.error());
+                                if (auto safety = app.backups().create(**mount, save, record.titleName, tr("before restore")); !safety)
+                                    return app.showMessage(tr("Restore cancelled"), trf("Could not back up the current save: {}", safety.error()));
                                 auto restored = app.backups().restore(record, **mount);
-                                if (restored) app.toast("Backup restored");
-                                else app.showMessage("Restore failed", restored.error());
+                                if (restored) app.toast(tr("Backup restored"));
+                                else app.showMessage(tr("Restore failed"), restored.error());
                             });
             }
-            if (ui::row("##verify", "Check integrity").activated) {
+            if (ui::row("##verify", tr("Check integrity")).activated) {
                 ImGui::CloseCurrentPopup();
                 auto verified = app.backups().verify(selected_);
-                if (verified) app.toast("Backup is intact");
-                else app.showMessage("Backup is damaged", verified.error());
+                if (verified) app.toast(tr("Backup is intact"));
+                else app.showMessage(tr("Backup is damaged"), verified.error());
             }
-            if (ui::row("##delete", "Delete", "", ui::color::Danger).activated) {
+            if (ui::row("##delete", tr("Delete"), "", ui::color::Danger).activated) {
                 ImGui::CloseCurrentPopup();
                 auto record = selected_;
-                app.confirm("Delete backup?", "This cannot be undone.", "Delete", [record](App& app) {
-                    if (app.backups().remove(record)) app.toast("Backup deleted");
+                app.confirm(tr("Delete backup?"), tr("This cannot be undone."), tr("Delete"), [record](App& app) {
+                    if (app.backups().remove(record)) app.toast(tr("Backup deleted"));
                 });
             }
             if (ui::pressed(ui::Button::B)) ImGui::CloseCurrentPopup();

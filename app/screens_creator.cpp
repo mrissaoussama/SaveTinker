@@ -5,6 +5,7 @@
 #include <span>
 
 #include "app.hpp"
+#include "i18n.hpp"
 #include "savetinker/authoring.hpp"
 #include "savetinker/checksum.hpp"
 #include "ui.hpp"
@@ -44,15 +45,15 @@ bool isNumeric(const std::string& type) {
 
 std::string describeField(const st::TemplateField& field) {
     std::string text = std::format("{} @ 0x{:X}", field.type, field.offset);
-    if (field.type == "bit") text += std::format(" bit {}", field.bit);
-    if (field.type == "utf8" || field.type == "utf16") text += std::format(" ({} chars)", field.length);
+    if (field.type == "bit") text += trf(" bit {}", field.bit);
+    if (field.type == "utf8" || field.type == "utf16") text += trf(" ({} chars)", field.length);
     if (field.bigEndian && field.type != "bit" && field.type != "utf8") text += " BE";
     return text;
 }
 
 std::string previewValue(const st::TemplateField& field, const st::Bytes& content) {
     const st::ByteBuffer buffer(content);
-    if (field.offset + st::templateFieldSize(field) > buffer.size()) return "past the end of the file";
+    if (field.offset + st::templateFieldSize(field) > buffer.size()) return tr("past the end of the file");
     const auto endian = field.bigEndian ? st::Endian::Big : st::Endian::Little;
     const auto offset = static_cast<std::size_t>(field.offset);
     const auto& type = field.type;
@@ -89,26 +90,26 @@ public:
     FieldScreen(std::string titleId, st::TemplateField field, std::optional<std::size_t> index, st::Bytes content)
         : titleId_(std::move(titleId)), field_(std::move(field)), index_(index), content_(std::move(content)) {}
 
-    std::string title() const override { return index_ ? "Edit field" : "New field"; }
+    std::string title() const override { return index_ ? tr("Edit field") : tr("New field"); }
 
-    std::vector<Hint> hints(const App&) const override { return {{"A", "Select"}, {"B", "Cancel"}}; }
+    std::vector<Hint> hints(const App&) const override { return {{"A", tr("Select")}, {"B", tr("Cancel")}}; }
 
     void draw(App& app) override {
-        ui::dimText(std::format("{} at offset 0x{:X}", field_.file, field_.offset));
+        ui::dimText(trf("{} at offset 0x{:X}", field_.file, field_.offset));
 
-        ui::sectionTitle("Field");
-        if (ui::row("##label", "Label", field_.label.empty() ? "Not set" : field_.label,
+        ui::sectionTitle(tr("Field"));
+        if (ui::row("##label", tr("Label"), field_.label.empty() ? tr("Not set") : field_.label,
                     field_.label.empty() ? ui::color::Warning : ui::color::TextDim)
                 .activated)
-            app.promptText({"Field label", field_.label, TextKind::Text, 64}, [this](App&, std::string text) { field_.label = text; });
-        if (ui::row("##page", "Page", field_.page.empty() ? "General" : field_.page).activated)
-            app.promptText({"Page name", field_.page, TextKind::Text, 64}, [this](App&, std::string text) { field_.page = text; });
+            app.promptText({tr("Field label"), field_.label, TextKind::Text, 64}, [this](App&, std::string text) { field_.label = text; });
+        if (ui::row("##page", tr("Page"), field_.page.empty() ? tr("General") : field_.page).activated)
+            app.promptText({tr("Page name"), field_.page, TextKind::Text, 64}, [this](App&, std::string text) { field_.page = text; });
 
         {
             const auto types = std::span(st::kTemplateTypes);
             auto current = std::ranges::find(types, field_.type);
             std::size_t index = current == types.end() ? 0 : static_cast<std::size_t>(current - types.begin());
-            const auto result = ui::row("##type", "Type", valueLabel(std::string(types[index])));
+            const auto result = ui::row("##type", tr("Type"), valueLabel(std::string(types[index])));
             const int step = ui::horizontalInput(result.id, result.focused) + (result.activated ? 1 : 0);
             if (step) {
                 const int count = static_cast<int>(types.size());
@@ -118,30 +119,30 @@ public:
             }
         }
         if (field_.type == "bit") {
-            const auto result = ui::row("##bit", "Bit", valueLabel(std::to_string(field_.bit)));
+            const auto result = ui::row("##bit", tr("Bit"), valueLabel(std::to_string(field_.bit)));
             const int step = ui::horizontalInput(result.id, result.focused) + (result.activated ? 1 : 0);
             if (step) field_.bit = (field_.bit + step + 8) % 8;
         }
         if (field_.type == "utf8" || field_.type == "utf16") {
-            if (ui::row("##length", "Length in characters", std::to_string(field_.length)).activated)
-                app.promptText({"Length in characters", std::to_string(field_.length), TextKind::Number, 5}, [this](App& app, std::string text) {
+            if (ui::row("##length", tr("Length in characters"), std::to_string(field_.length)).activated)
+                app.promptText({tr("Length in characters"), std::to_string(field_.length), TextKind::Number, 5}, [this](App& app, std::string text) {
                     try {
                         field_.length = std::stoul(text);
                     } catch (const std::exception&) {
-                        app.toast("Enter a number", true);
+                        app.toast(tr("Enter a number"), true);
                     }
                 });
         }
         if (field_.type != "bit" && field_.type != "utf8" && field_.type != "u8" && field_.type != "s8")
-            drawToggleRow("##endian", "Big endian", field_.bigEndian);
-        if (isNumeric(field_.type) && field_.type[0] != 'f') drawToggleRow("##hex", "Show as hex", field_.hex);
+            drawToggleRow("##endian", tr("Big endian"), field_.bigEndian);
+        if (isNumeric(field_.type) && field_.type[0] != 'f') drawToggleRow("##hex", tr("Show as hex"), field_.hex);
 
-        ui::sectionTitle("Current value");
+        ui::sectionTitle(tr("Current value"));
         ui::row("##preview", previewValue(field_, content_));
 
         ImGui::Spacing();
-        if (ui::row("##save", index_ ? "Save field" : "Add field", "", ui::color::Accent).activated) save(app);
-        if (index_ && ui::row("##remove", "Remove field", "", ui::color::Danger).activated) {
+        if (ui::row("##save", index_ ? tr("Save field") : tr("Add field"), "", ui::color::Accent).activated) save(app);
+        if (index_ && ui::row("##remove", tr("Remove field"), "", ui::color::Danger).activated) {
             auto& draft = editorDraft(app, titleId_);
             if (*index_ < draft.fields.size()) draft.fields.erase(draft.fields.begin() + static_cast<std::ptrdiff_t>(*index_));
             storeEditorDraft(app, titleId_);
@@ -153,12 +154,12 @@ private:
     void save(App& app) {
         if (auto problem = st::validateTemplateField(field_); !problem.empty()) return app.toast(problem, true);
         if (field_.offset + st::templateFieldSize(field_) > content_.size())
-            return app.toast("The field does not fit in the file", true);
+            return app.toast(tr("The field does not fit in the file"), true);
         auto& draft = editorDraft(app, titleId_);
         if (index_ && *index_ < draft.fields.size()) draft.fields[*index_] = field_;
         else draft.fields.push_back(field_);
         storeEditorDraft(app, titleId_);
-        app.toast(std::format("{} fields in the editor draft", draft.fields.size()));
+        app.toast(trf("{} fields in the editor draft", draft.fields.size()));
         app.pop();
     }
 
@@ -172,41 +173,40 @@ class DraftScreen : public Screen {
 public:
     explicit DraftScreen(std::string titleId) : titleId_(std::move(titleId)) {}
 
-    std::string title() const override { return "Editor creator"; }
+    std::string title() const override { return tr("Editor creator"); }
 
     std::vector<Hint> hints(const App&) const override {
-        return {{"A", "Select"}, {"X", "Remove field"}, {"B", "Back"}};
+        return {{"A", tr("Select")}, {"X", tr("Remove field")}, {"B", tr("Back")}};
     }
 
     void draw(App& app) override {
         auto& draft = editorDraft(app, titleId_);
         auto& manifest = draft.manifest;
-        ui::wrappedText("Mark fields from the hex editor menu (Y), then install the result as an editor. "
-                        "The generated code can be edited later on a computer.",
+        ui::wrappedText(tr("Mark fields from the hex editor menu (Y), then install the result as an editor. The generated code can be edited later on a computer."),
                         ui::color::TextDim);
 
-        ui::sectionTitle("Editor");
-        if (ui::row("##name", "Name", manifest.name).activated)
-            app.promptText({"Editor name", manifest.name, TextKind::Text, 64}, [this](App& app, std::string text) {
+        ui::sectionTitle(tr("Editor"));
+        if (ui::row("##name", tr("Name"), manifest.name).activated)
+            app.promptText({tr("Editor name"), manifest.name, TextKind::Text, 64}, [this](App& app, std::string text) {
                 if (text.empty()) return;
                 editorDraft(app, titleId_).manifest.name = text;
                 storeEditorDraft(app, titleId_);
             });
-        if (ui::row("##id", "Identifier", manifest.id).activated)
-            app.promptText({"Identifier (lowercase, digits, . - _)", manifest.id, TextKind::Text, 64}, [this](App& app, std::string text) {
+        if (ui::row("##id", tr("Identifier"), manifest.id).activated)
+            app.promptText({tr("Identifier (lowercase, digits, . - _)"), manifest.id, TextKind::Text, 64}, [this](App& app, std::string text) {
                 editorDraft(app, titleId_).manifest.id = text;
                 storeEditorDraft(app, titleId_);
             });
-        if (ui::row("##version", "Version", manifest.version).activated)
-            app.promptText({"Version", manifest.version, TextKind::Text, 32}, [this](App& app, std::string text) {
+        if (ui::row("##version", tr("Version"), manifest.version).activated)
+            app.promptText({tr("Version"), manifest.version, TextKind::Text, 32}, [this](App& app, std::string text) {
                 editorDraft(app, titleId_).manifest.version = text;
                 storeEditorDraft(app, titleId_);
             });
         const std::string signature = draft.detectFile.empty()
-                                          ? "None, any save opens"
+                                          ? tr("None, any save opens")
                                           : std::format("{} @ 0x{:X}: {}", draft.detectFile, draft.magicOffset, st::toHex(draft.magic));
-        if (ui::row("##signature", "Save signature", signature).activated && !draft.detectFile.empty()) {
-            app.confirm("Remove the signature?", "The editor will open any save of this game.", "Remove", [this](App& app) {
+        if (ui::row("##signature", tr("Save signature"), signature).activated && !draft.detectFile.empty()) {
+            app.confirm(tr("Remove the signature?"), tr("The editor will open any save of this game."), tr("Remove"), [this](App& app) {
                 auto& draft = editorDraft(app, titleId_);
                 draft.detectFile.clear();
                 draft.magic.clear();
@@ -214,12 +214,12 @@ public:
             });
         }
 
-        ui::sectionTitle(std::format("Fields ({})", draft.fields.size()));
-        if (draft.fields.empty()) ui::dimText("No fields yet. Open a save in the hex editor and choose \"Mark field here\".");
+        ui::sectionTitle(trf("Fields ({})", draft.fields.size()));
+        if (draft.fields.empty()) ui::dimText(tr("No fields yet. Open a save in the hex editor and choose \"Mark field here\"."));
         std::optional<std::size_t> removeIndex;
         for (std::size_t i = 0; i < draft.fields.size(); ++i) {
             const auto& field = draft.fields[i];
-            const std::string page = field.page.empty() ? "General" : field.page;
+            const std::string page = field.page.empty() ? tr("General") : field.page;
             const auto result = ui::row(("##field" + std::to_string(i)).c_str(), page + " / " + field.label,
                                         field.file + "  " + describeField(field));
             if (result.activated) editField(app, i);
@@ -230,14 +230,14 @@ public:
             storeEditorDraft(app, titleId_);
         }
 
-        ui::sectionTitle("Finish");
-        if (ui::row("##preview", "Preview code").activated) {
+        ui::sectionTitle(tr("Finish"));
+        if (ui::row("##preview", tr("Preview code")).activated) {
             auto package = buildPackage(app, draft);
             if (package) app.push(makeInspectScreen(manifest.name, std::move(*package), std::nullopt, nullptr));
         }
-        if (ui::row("##install", "Install editor", "", ui::color::Accent).activated) install(app, draft);
-        if (ui::row("##discard", "Discard draft", "", ui::color::Danger).activated)
-            app.confirm("Discard the draft?", "All marked fields are removed.", "Discard", [this](App& app) {
+        if (ui::row("##install", tr("Install editor"), "", ui::color::Accent).activated) install(app, draft);
+        if (ui::row("##discard", tr("Discard draft"), "", ui::color::Danger).activated)
+            app.confirm(tr("Discard the draft?"), tr("All marked fields are removed."), tr("Discard"), [this](App& app) {
                 discardEditorDraft(app, titleId_);
                 app.pop();
             });
@@ -262,31 +262,31 @@ private:
     static std::optional<st::EditorPackage> buildPackage(App& app, const st::EditorTemplate& draft) {
         auto manifest = st::parseManifest(st::manifestToJson(draft.manifest));
         if (!manifest) {
-            app.showMessage("Editor details are not valid", manifest.error());
+            app.showMessage(tr("Editor details are not valid"), manifest.error());
             return std::nullopt;
         }
         st::EditorPackage package{std::move(*manifest), st::generateEditorFiles(draft)};
         for (const auto& issue : st::validatePackage(package)) {
             if (issue.severity != st::ValidationIssue::Severity::Error) continue;
-            app.showMessage("The generated editor has a problem", issue.file + ": " + issue.message);
+            app.showMessage(tr("The generated editor has a problem"), issue.file + ": " + issue.message);
             return std::nullopt;
         }
         return package;
     }
 
     void install(App& app, const st::EditorTemplate& draft) {
-        if (draft.fields.empty()) return app.toast("Mark at least one field first", true);
+        if (draft.fields.empty()) return app.toast(tr("Mark at least one field first"), true);
         auto package = buildPackage(app, draft);
         if (!package) return;
         auto doInstall = [package = std::move(*package)](App& app) {
             auto installed = app.editors().install(package, "", "");
-            if (!installed) return app.showMessage("Install failed", installed.error());
-            app.toast(installed->manifest.name + " installed");
+            if (!installed) return app.showMessage(tr("Install failed"), installed.error());
+            app.toast(trf("{} installed", installed->manifest.name));
         };
         if (auto existing = app.editors().find(draft.manifest.id)) {
-            app.confirm("Replace the installed editor?", existing->manifest.name + " v" + existing->manifest.version +
-                                                             " uses the same identifier and will be replaced.",
-                        "Replace", std::move(doInstall));
+            app.confirm(tr("Replace the installed editor?"), trf("{} v{} uses the same identifier and will be replaced.",
+                                                                 existing->manifest.name, existing->manifest.version),
+                        tr("Replace"), std::move(doInstall));
             return;
         }
         doInstall(app);
@@ -304,7 +304,7 @@ st::EditorTemplate& editorDraft(App& app, const std::string& titleId) {
     if (stream) {
         auto loaded = st::templateFromJson(std::string(std::istreambuf_iterator<char>(stream), {}));
         if (loaded) draft = std::move(*loaded);
-        else app.toast("The saved editor draft could not be read: " + loaded.error(), true);
+        else app.toast(trf("The saved editor draft could not be read: {}", loaded.error()), true);
     }
     return drafts[titleId] = std::move(draft);
 }
@@ -315,7 +315,7 @@ void storeEditorDraft(App& app, const std::string& titleId) {
     std::filesystem::create_directories(path.parent_path(), error);
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
     stream << st::templateToJson(editorDraft(app, titleId));
-    if (!stream) app.toast("Could not save the editor draft", true);
+    if (!stream) app.toast(tr("Could not save the editor draft"), true);
 }
 
 void discardEditorDraft(App& app, const std::string& titleId) {

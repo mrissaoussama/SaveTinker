@@ -1,0 +1,12 @@
+# Writes ${OUTPUT} with every app/lang/*.json embedded as a string.
+file(GLOB files "${LANG_DIR}/*.json")
+list(SORT files)
+set(body "#pragma once\n\n#include <string_view>\n#include <utility>\n\nnamespace app {\n\ninline constexpr std::pair<std::string_view, std::string_view> kBuiltinLanguages[] = {\n")
+foreach(file IN LISTS files)
+    get_filename_component(code "${file}" NAME_WE)
+    file(READ "${file}" content)
+    string(APPEND body "    {\"${code}\", R\"st_lang(${content})st_lang\"},\n")
+endforeach()
+string(APPEND body "};\n\n}\n")
+file(WRITE "${OUTPUT}.tmp" "${body}")
+file(COPY_FILE "${OUTPUT}.tmp" "${OUTPUT}" ONLY_IF_DIFFERENT)

@@ -41,6 +41,16 @@ quit
 
 `type <text>` enters text into an open prompt and `press ENTER` confirms it.
 
+## Translations
+
+Interface text is looked up by its English wording in `app/lang/<code>.json`, which is built into the app.
+`scripts/update_translations.py [code]` collects every `tr`/`trf` string from `app/` and adds missing ones
+with an empty value (shown in English until translated). Users can override or add a language without
+rebuilding by placing `<code>.json` in the `lang/` folder of the data directory. Translations whose `{}`
+placeholders do not match the English text are ignored.
+
+The language setting also picks editor label files (`st.labels`), see below.
+
 ## Command line tool
 
 The desktop build also produces `savetinker-cli` for editor authors and repository maintainers:

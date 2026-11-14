@@ -10,6 +10,7 @@ add_executable(savetinker_tests
     test_editor_store.cpp
     test_editor_template.cpp
     test_example_editor.cpp
+    test_i18n.cpp
     test_manifest.cpp
     test_network.cpp
     test_pc_platform.cpp
@@ -19,7 +20,8 @@ add_executable(savetinker_tests
 )
 target_link_libraries(savetinker_tests PRIVATE savetinker_platform doctest)
 target_compile_options(savetinker_tests PRIVATE -Wall -Wextra)
-target_compile_definitions(savetinker_tests PRIVATE SAVETINKER_EXAMPLES_DIR="${PROJECT_SOURCE_DIR}/examples")
+target_compile_definitions(savetinker_tests PRIVATE SAVETINKER_EXAMPLES_DIR="${PROJECT_SOURCE_DIR}/examples"
+    SAVETINKER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME savetinker_tests COMMAND savetinker_tests)
 
 add_test(NAME cli_validate_sample COMMAND savetinker-cli validate ${PROJECT_SOURCE_DIR}/examples/editors/sample-game)

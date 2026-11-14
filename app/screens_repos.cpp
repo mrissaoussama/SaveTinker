@@ -2,6 +2,7 @@
 #include <format>
 
 #include "app.hpp"
+#include "i18n.hpp"
 #include "savetinker/checksum.hpp"
 #include "savetinker/code_inspect.hpp"
 #include "savetinker/manifest.hpp"
@@ -42,25 +43,25 @@ const st::RepoEditorEntry* findRepoEditor(const st::RepoSource* repo, const std:
 
 // Downloads a repo editor, then shows the inspector with an install button.
 void downloadAndInspect(App& app, const std::string& repoUrl, const st::RepoEditorEntry& entry) {
-    app.runTask("Downloading " + entry.name, [&app, repoUrl, entry](Progress& progress) -> std::function<void(App&)> {
+    app.runTask(trf("Downloading {}", entry.name), [&app, repoUrl, entry](Progress& progress) -> std::function<void(App&)> {
         auto bytes = app.repoManager().downloadEditor(entry, [&progress](std::uint64_t done, std::uint64_t total) {
             progress.done = done;
             progress.total = total;
         });
-        if (!bytes) return [error = bytes.error()](App& app) { app.showMessage("Download failed", error); };
+        if (!bytes) return [error = bytes.error()](App& app) { app.showMessage(tr("Download failed"), error); };
         auto package = st::openPackage(*bytes);
-        if (!package) return [error = package.error()](App& app) { app.showMessage("This package is not valid", error); };
+        if (!package) return [error = package.error()](App& app) { app.showMessage(tr("This package is not valid"), error); };
         if (package->manifest.id != entry.id)
-            return [](App& app) { app.showMessage("This package is not valid", "The package id does not match the repository listing."); };
+            return [](App& app) { app.showMessage(tr("This package is not valid"), tr("The package id does not match the repository listing.")); };
         const auto hash = st::toHex(st::sha256(*bytes));
         return [package = std::move(*package), repoUrl, hash](App& app) mutable {
             std::optional<st::EditorPackage> previous;
             if (auto installed = app.editors().load(package.manifest.id)) previous = std::move(*installed);
-            const std::string title = "Review " + package.manifest.name;
+            const std::string title = trf("Review {}", package.manifest.name);
             auto copy = package;
             app.push(makeInspectScreen(title, std::move(package), std::move(previous), [copy, repoUrl, hash](App& app) {
                 auto installed = app.editors().install(copy, repoUrl, hash);
-                if (!installed) return app.showMessage("Install failed", installed.error());
+                if (!installed) return app.showMessage(tr("Install failed"), installed.error());
                 app.pop();
                 app.toast(copy.manifest.name + " installed");
             }));
@@ -73,12 +74,12 @@ public:
     explicit EditorDetailScreen(std::string id) : id_(std::move(id)) {}
 
     std::string title() const override { return name_; }
-    std::vector<Hint> hints(const App&) const override { return {{"A", "Select"}, {"B", "Back"}}; }
+    std::vector<Hint> hints(const App&) const override { return {{"A", tr("Select")}, {"B", tr("Back")}}; }
 
     void draw(App& app) override {
         const auto editor = app.editors().find(id_);
         if (!editor) {
-            ui::emptyState("Editor removed");
+            ui::emptyState(tr("Editor removed"));
             return;
         }
         const auto& manifest = editor->manifest;
@@ -88,39 +89,39 @@ public:
         if (!manifest.authors.empty()) {
             std::string authors;
             for (const auto& author : manifest.authors) authors += (authors.empty() ? "" : ", ") + author;
-            ui::dimText("By " + authors);
+            ui::dimText(trf("By {}", authors));
         }
         const auto* repo = findRepo(app, editor->repoUrl);
-        ui::dimText(editor->repoUrl.empty() ? "Installed manually" : "From " + (repo ? repo->index.name : editor->repoUrl));
+        ui::dimText(editor->repoUrl.empty() ? tr("Installed manually") : trf("From {}", repo ? repo->index.name : editor->repoUrl));
 
-        ui::sectionTitle("Actions");
-        if (ui::row("##inspect", "Inspect code").activated) {
+        ui::sectionTitle(tr("Actions"));
+        if (ui::row("##inspect", tr("Inspect code")).activated) {
             if (auto package = app.editors().load(id_))
                 app.push(makeInspectScreen(manifest.name, std::move(*package), std::nullopt, nullptr));
         }
         const auto updates = app.catalog().findUpdates({{manifest.id, manifest.version, editor->repoUrl}});
         if (!updates.empty()) {
             const auto& update = updates.front();
-            if (ui::row("##update", "Review update", "v" + update.editor->version, ui::color::Accent).activated)
+            if (ui::row("##update", tr("Review update"), "v" + update.editor->version, ui::color::Accent).activated)
                 downloadAndInspect(app, update.repo->url, *update.editor);
         }
-        if (ui::row("##remove", "Remove", "", ui::color::Danger).activated) {
+        if (ui::row("##remove", tr("Remove"), "", ui::color::Danger).activated) {
             const auto id = id_;
-            app.confirm("Remove " + manifest.name + "?", "Backups and saves are not affected.", "Remove", [id](App& app) {
-                if (auto removed = app.editors().remove(id); !removed) return app.showMessage("Could not remove", removed.error());
+            app.confirm(trf("Remove {}?", manifest.name), tr("Backups and saves are not affected."), tr("Remove"), [id](App& app) {
+                if (auto removed = app.editors().remove(id); !removed) return app.showMessage(tr("Could not remove"), removed.error());
                 app.pop();
-                app.toast("Editor removed");
+                app.toast(tr("Editor removed"));
             });
         }
 
-        ui::sectionTitle("Games");
+        ui::sectionTitle(tr("Games"));
         drawGames(manifest.games);
-        drawLink("Source", manifest.source);
+        drawLink(tr("Source"), manifest.source);
     }
 
 private:
     std::string id_;
-    std::string name_ = "Editor";
+    std::string name_ = tr("Editor");
 };
 
 class RepoScreen : public Screen {
@@ -128,30 +129,30 @@ public:
     explicit RepoScreen(std::string url) : url_(std::move(url)) {}
 
     std::string title() const override { return name_; }
-    std::vector<Hint> hints(const App&) const override { return {{"A", "Select"}, {"Y", "Options"}, {"B", "Back"}}; }
+    std::vector<Hint> hints(const App&) const override { return {{"A", tr("Select")}, {"Y", tr("Options")}, {"B", tr("Back")}}; }
 
     void draw(App& app) override {
         const auto* repo = findRepo(app, url_);
         auto& entries = app.settings().repos;
         auto entry = std::ranges::find(entries, url_, &st::RepoEntry::url);
         if (entry == entries.end()) {
-            ui::emptyState("Repository removed");
+            ui::emptyState(tr("Repository removed"));
             return;
         }
-        name_ = repo && !repo->index.name.empty() ? repo->index.name : "Repository";
+        name_ = repo && !repo->index.name.empty() ? repo->index.name : tr("Repository");
         if (!app.modalOpen() && ui::pressed(ui::Button::Y)) ImGui::OpenPopup("##repooptions");
 
         ImGui::TextUnformatted(name_.c_str());
         ui::dimText(url_);
-        if (repo && !repo->index.maintainer.empty()) ui::dimText("Maintained by " + repo->index.maintainer);
+        if (repo && !repo->index.maintainer.empty()) ui::dimText(trf("Maintained by {}", repo->index.maintainer));
         if (repo && !repo->index.description.empty()) ui::dimText(repo->index.description);
         const auto status = std::ranges::find(app.repoStatuses(), url_, &st::RepoStatus::url);
         if (status != app.repoStatuses().end() && !status->error.empty())
-            ui::wrappedText((status->fromCache ? "Showing the offline copy. " : "") + status->error, ui::color::Warning);
-        if (!entry->enabled) ui::wrappedText("This repository is disabled.", ui::color::Warning);
+            ui::wrappedText((status->fromCache ? tr("Showing the offline copy. ") : "") + status->error, ui::color::Warning);
+        if (!entry->enabled) ui::wrappedText(tr("This repository is disabled."), ui::color::Warning);
 
-        ui::sectionTitle("Editors");
-        if (!repo || repo->index.editors.empty()) ui::dimText("No editors listed.");
+        ui::sectionTitle(tr("Editors"));
+        if (!repo || repo->index.editors.empty()) ui::dimText(tr("No editors listed."));
         if (repo) {
             for (const auto& editor : repo->index.editors) {
                 const auto installed = app.editors().find(editor.id);
@@ -159,7 +160,7 @@ public:
                 if (installed) {
                     const auto mine = st::Version::parse(installed->manifest.version);
                     const auto theirs = st::Version::parse(editor.version);
-                    state = mine && theirs && *theirs > *mine ? "Update" : "Installed";
+                    state = mine && theirs && *theirs > *mine ? tr("Update") : tr("Installed");
                 } else {
                     state = "v" + editor.version;
                 }
@@ -168,13 +169,13 @@ public:
                     if (platforms.find(st::platformDisplayName(game.platform)) == std::string::npos)
                         platforms += (platforms.empty() ? "" : ", ") + st::platformDisplayName(game.platform);
                 if (ui::row(editor.id.c_str(), editor.name + "   " + platforms, state,
-                            state == "Update" ? ui::color::Accent : ui::color::TextDim)
+                            state == tr("Update") ? ui::color::Accent : ui::color::TextDim)
                         .activated)
                     app.push(makeRepoEditorScreen(url_, editor.id));
             }
         }
-        if (repo && !repo->index.homepage.empty()) drawLink("Homepage", repo->index.homepage);
-        drawLink("Share this repository", url_);
+        if (repo && !repo->index.homepage.empty()) drawLink(tr("Homepage"), repo->index.homepage);
+        drawLink(tr("Share this repository"), url_);
         drawOptions(app, *entry);
     }
 
@@ -183,20 +184,20 @@ private:
         ImGui::SetNextWindowPos(ImGui::GetIO().DisplaySize * 0.5f, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 20, 0));
         if (!ImGui::BeginPopup("##repooptions")) return;
-        if (ui::row("##refresh", "Refresh").activated) {
+        if (ui::row("##refresh", tr("Refresh")).activated) {
             ImGui::CloseCurrentPopup();
             app.refreshRepos(true);
         }
-        if (ui::row("##toggle", entry.enabled ? "Disable" : "Enable").activated) {
+        if (ui::row("##toggle", entry.enabled ? tr("Disable") : tr("Enable")).activated) {
             ImGui::CloseCurrentPopup();
             entry.enabled = !entry.enabled;
             app.saveSettings();
             app.refreshRepos(false);
         }
-        if (ui::row("##remove", "Remove repository", "", ui::color::Danger).activated) {
+        if (ui::row("##remove", tr("Remove repository"), "", ui::color::Danger).activated) {
             ImGui::CloseCurrentPopup();
             const auto url = url_;
-            app.confirm("Remove repository?", url + "\n\nInstalled editors stay installed.", "Remove", [url](App& app) {
+            app.confirm(tr("Remove repository?"), url + tr("\n\nInstalled editors stay installed."), tr("Remove"), [url](App& app) {
                 std::erase_if(app.settings().repos, [&](const st::RepoEntry& e) { return e.url == url; });
                 app.catalog().removeRepo(url);
                 app.saveSettings();
@@ -207,7 +208,7 @@ private:
     }
 
     std::string url_;
-    std::string name_ = "Repository";
+    std::string name_ = tr("Repository");
 };
 
 class RepoEditorScreen : public Screen {
@@ -215,13 +216,13 @@ public:
     RepoEditorScreen(std::string repoUrl, std::string id) : repoUrl_(std::move(repoUrl)), id_(std::move(id)) {}
 
     std::string title() const override { return name_; }
-    std::vector<Hint> hints(const App&) const override { return {{"A", "Select"}, {"B", "Back"}}; }
+    std::vector<Hint> hints(const App&) const override { return {{"A", tr("Select")}, {"B", tr("Back")}}; }
 
     void draw(App& app) override {
         const auto* repo = findRepo(app, repoUrl_);
         const auto* entry = findRepoEditor(repo, id_);
         if (!entry) {
-            ui::emptyState("No longer listed in this repository");
+            ui::emptyState(tr("No longer listed in this repository"));
             return;
         }
         name_ = entry->name;
@@ -230,32 +231,32 @@ public:
         if (!entry->authors.empty()) {
             std::string authors;
             for (const auto& author : entry->authors) authors += (authors.empty() ? "" : ", ") + author;
-            ui::dimText("By " + authors);
+            ui::dimText(trf("By {}", authors));
         }
-        ui::dimText("From " + repo->index.name + (entry->size ? "  \xC2\xB7  " + ui::formatSize(entry->size) : "") +
+        ui::dimText(trf("From {}", repo->index.name) + (entry->size ? "  \xC2\xB7  " + ui::formatSize(entry->size) : "") +
                     (entry->updated.empty() ? "" : "  \xC2\xB7  updated " + entry->updated));
         if (entry->sha256.empty())
-            ui::wrappedText("The repository does not list a checksum for this download.", ui::color::Warning);
+            ui::wrappedText(tr("The repository does not list a checksum for this download."), ui::color::Warning);
 
-        ui::sectionTitle("Actions");
+        ui::sectionTitle(tr("Actions"));
         const auto installed = app.editors().find(id_);
-        const std::string action = installed ? (installed->manifest.version == entry->version ? "Reinstall" : "Review update")
-                                             : "Review and install";
-        if (ui::row("##install", action, installed ? "installed v" + installed->manifest.version : "", ui::color::Accent).activated)
+        const std::string action = installed ? (installed->manifest.version == entry->version ? tr("Reinstall") : tr("Review update"))
+                                             : tr("Review and install");
+        if (ui::row("##install", action, installed ? trf("installed v{}", installed->manifest.version) : "", ui::color::Accent).activated)
             downloadAndInspect(app, repoUrl_, *entry);
         if (!entry->changelog.empty()) {
-            ui::sectionTitle("Changes");
+            ui::sectionTitle(tr("Changes"));
             ui::wrappedText(entry->changelog);
         }
-        ui::sectionTitle("Games");
+        ui::sectionTitle(tr("Games"));
         drawGames(entry->games);
-        drawLink("Source", entry->source);
+        drawLink(tr("Source"), entry->source);
     }
 
 private:
     std::string repoUrl_;
     std::string id_;
-    std::string name_ = "Editor";
+    std::string name_ = tr("Editor");
 };
 
 class InspectScreen : public Screen {
@@ -273,10 +274,10 @@ public:
     std::string title() const override { return title_; }
 
     std::vector<Hint> hints(const App&) const override {
-        std::vector<Hint> hints = {{"L", "File"}, {"R", "File"}, {"RS", "Scroll"}};
-        if (previous_) hints.push_back({"X", showDiff_ ? "Show code" : "Show changes"});
-        if (install_) hints.push_back({"+", "Install"});
-        hints.push_back({"B", "Back"});
+        std::vector<Hint> hints = {{"L", tr("File")}, {"R", tr("File")}, {"RS", tr("Scroll")}};
+        if (previous_) hints.push_back({"X", showDiff_ ? tr("Show code") : tr("Show changes")});
+        if (install_) hints.push_back({"+", tr("Install")});
+        hints.push_back({"B", tr("Back")});
         return hints;
     }
 
@@ -334,7 +335,7 @@ private:
         ImGui::TextUnformatted((package_.manifest.name + "   v" + package_.manifest.version).c_str());
         if (previous_) {
             ImGui::SameLine();
-            ui::badge("installed v" + previous_->manifest.version, ui::color::TextDim);
+            ui::badge(trf("installed v{}", previous_->manifest.version), ui::color::TextDim);
         }
         std::size_t writes = 0;
         std::vector<std::string> modules, data;
@@ -343,11 +344,11 @@ private:
             if (finding.kind == st::CodeFinding::Kind::Requires) modules.push_back(finding.detail);
             if (finding.kind == st::CodeFinding::Kind::ReadsData) data.push_back(finding.detail);
         }
-        std::string summary = std::format("{} files  \xC2\xB7  writes to the save in {} places", package_.files.size(), writes);
-        if (!modules.empty()) summary += std::format("  \xC2\xB7  modules: {}", modules.size());
-        if (!data.empty()) summary += std::format("  \xC2\xB7  data files: {}", data.size());
+        std::string summary = trf("{} files  \xC2\xB7  writes to the save in {} places", package_.files.size(), writes);
+        if (!modules.empty()) summary += trf("  \xC2\xB7  modules: {}", modules.size());
+        if (!data.empty()) summary += trf("  \xC2\xB7  data files: {}", data.size());
         ui::dimText(summary);
-        ui::dimText("Editors run in a sandbox without file, network or system access. They can only change the save being edited, and a backup is made first.");
+        ui::dimText(tr("Editors run in a sandbox without file, network or system access. They can only change the save being edited, and a backup is made first."));
         ImGui::Spacing();
     }
 
@@ -364,7 +365,7 @@ private:
 
     void drawCode(const st::PackageFile& file) {
         if (!file.path.ends_with(".lua") && !file.path.ends_with(".json") && !file.path.ends_with(".txt") && !file.path.ends_with(".md")) {
-            ui::dimText(std::format("Binary file, {}", ui::formatSize(file.content.size())));
+            ui::dimText(trf("Binary file, {}", ui::formatSize(file.content.size())));
             return;
         }
         const auto lines = st::splitLines(file.text());
@@ -407,7 +408,7 @@ private:
         const auto diff = st::diffLines(old ? old->text() : std::string_view{}, file.text());
         const bool anyChange = std::ranges::any_of(diff, [](const st::DiffLine& l) { return l.kind != st::DiffKind::Same; });
         if (!anyChange) {
-            ui::dimText("No changes in this file.");
+            ui::dimText(tr("No changes in this file."));
             return;
         }
         auto* draw = ImGui::GetWindowDrawList();
