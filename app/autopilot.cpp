@@ -1,12 +1,14 @@
 #include "autopilot.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <imgui.h>
 #include <map>
 #include <sstream>
 #include <vector>
 
-#ifdef __SWITCH__
+#if defined(__3DS__)
+#elif defined(__SWITCH__)
 #include <GLES3/gl3.h>
 #else
 #include <SDL_opengl.h>
@@ -103,15 +105,28 @@ bool Autopilot::beforeFrame() {
 }
 
 void Autopilot::afterRender(int width, int height) {
+#ifdef __3DS__
+    (void)width;
+    (void)height;
+#else
     if (pendingShot_.empty()) return;
     std::vector<unsigned char> pixels(static_cast<std::size_t>(width) * height * 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    // OpenGL rows start at the bottom.
+    std::vector<unsigned char> flipped(pixels.size());
+    const std::size_t stride = static_cast<std::size_t>(width) * 4;
+    for (int y = 0; y < height; ++y)
+        std::copy_n(&pixels[static_cast<std::size_t>(height - 1 - y) * stride], stride, &flipped[static_cast<std::size_t>(y) * stride]);
+    saveShot(flipped, width, height);
+#endif
+}
+
+void Autopilot::saveShot(const std::vector<unsigned char>& rgba, int width, int height) {
     std::error_code error;
     std::filesystem::create_directories(outputDir_, error);
     const auto path = (outputDir_ / (pendingShot_ + ".png")).string();
-    stbi_flip_vertically_on_write(1);
-    stbi_write_png(path.c_str(), width, height, 4, pixels.data(), width * 4);
+    stbi_write_png(path.c_str(), width, height, 4, rgba.data(), width * 4);
     pendingShot_.clear();
 }
 

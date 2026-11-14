@@ -231,7 +231,7 @@ private:
             ui::toggleSwitch(ImVec2(start.x + width - ImGui::GetFontSize() * 0.6f, start.y), ui::rowHeight(), settings.autoBackup);
         }
         {
-            const auto result = ui::row("##keep", tr("Backups kept per save"), std::format("\xE2\x80\xB9  {}  \xE2\x80\xBA", settings.backupsToKeep));
+            const auto result = ui::row("##keep", tr("Backups kept per save"), ui::stepper(std::to_string(settings.backupsToKeep)));
             const int step = ui::horizontalInput(result.id, result.focused);
             if (step < 0 && settings.backupsToKeep > 1) {
                 --settings.backupsToKeep;
@@ -250,7 +250,7 @@ private:
             int index = 1;
             for (int i = 0; i < 4; ++i)
                 if (std::abs(sizes[i] - settings.uiScale) < 0.01f) index = i;
-            const auto result = ui::row("##scale", tr("Interface size"), std::format("\xE2\x80\xB9  {}  \xE2\x80\xBA", tr(names[index])));
+            const auto result = ui::row("##scale", tr("Interface size"), ui::stepper(tr(names[index])));
             const int step = ui::horizontalInput(result.id, result.focused);
             int next = index;
             if (step < 0) next = std::max(0, index - 1);
@@ -268,7 +268,7 @@ private:
             std::size_t index = 0;
             for (std::size_t i = 0; i < languages.size(); ++i)
                 if (languages[i].first == settings.language) index = i;
-            const auto result = ui::row("##lang", tr("Language"), std::format("\xE2\x80\xB9  {}  \xE2\x80\xBA", tr(languages[index].second)));
+            const auto result = ui::row("##lang", tr("Language"), ui::stepper(tr(languages[index].second)));
             const int step = ui::horizontalInput(result.id, result.focused);
             std::size_t next = index;
             if (step > 0 || result.activated) next = (index + 1) % languages.size();

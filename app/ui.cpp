@@ -194,7 +194,8 @@ void emptyState(const std::string& title, const std::string& detail) {
 
 void iconTile(const Texture& texture, const std::string& name, float size) {
     if (texture) {
-        ImGui::Image(ImTextureRef(static_cast<ImTextureID>(texture.id)), ImVec2(size, size));
+        ImGui::Image(ImTextureRef(static_cast<ImTextureID>(texture.id)), ImVec2(size, size), ImVec2(0, 0),
+                     ImVec2(texture.uMax, texture.vMax));
         return;
     }
     const ImVec2 start = ImGui::GetCursorScreenPos();
@@ -245,6 +246,11 @@ void progressBar(float fraction, const std::string& overlay) {
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, color::Accent);
     ImGui::ProgressBar(fraction, ImVec2(-1, 0), overlay.c_str());
     ImGui::PopStyleColor();
+}
+
+std::string stepper(const std::string& text) {
+    static const bool quotes = ImGui::GetFont()->IsGlyphInFont(0x2039) && ImGui::GetFont()->IsGlyphInFont(0x203A);
+    return quotes ? "\xE2\x80\xB9  " + text + "  \xE2\x80\xBA" : "<  " + text + "  >";
 }
 
 std::string formatSize(std::uint64_t bytes) {

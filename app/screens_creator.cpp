@@ -36,7 +36,7 @@ st::EditorTemplate newDraft(App& app, const std::string& titleId) {
 }
 
 std::string valueLabel(const std::string& text) {
-    return std::format("\xE2\x80\xB9  {}  \xE2\x80\xBA", text);
+    return ui::stepper(text);
 }
 
 bool isNumeric(const std::string& type) {

@@ -33,6 +33,8 @@ public:
     virtual std::string language() const { return "en"; }
     virtual std::filesystem::path appPath() const = 0;
     virtual bool hasTouchKeyboard() const { return false; }
+    // False when hints should name console buttons rather than keyboard keys.
+    virtual bool usesKeyboard() const { return true; }
     virtual std::string environmentWarning() const { return {}; }
     virtual void requestRestart() {}
 };

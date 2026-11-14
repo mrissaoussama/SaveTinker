@@ -12,6 +12,8 @@ struct Texture {
     std::uintptr_t id = 0;
     int width = 0;
     int height = 0;
+    float uMax = 1.0f;
+    float vMax = 1.0f;
 
     explicit operator bool() const { return id != 0; }
 };

@@ -232,6 +232,11 @@ std::string App::buttonGlyph(const std::string& button) const {
         if (auto found = glyphs.find(button); found != glyphs.end()) return found->second;
         return button;
     }
+    if (!system_.usesKeyboard()) {
+        static const std::map<std::string, std::string> names = {{"+", "START"}, {"-", "SELECT"}, {"RS", "C-Stick"}};
+        if (auto found = names.find(button); found != names.end()) return found->second;
+        return button;
+    }
     static const std::map<std::string, std::string> keys = {
         {"A", "Enter"}, {"B", "Esc"}, {"X", "X"}, {"Y", "Y"}, {"L", "Q"}, {"R", "E"},
         {"ZL", "Ctrl+Z"}, {"ZR", "Ctrl+Y"}, {"+", "Ctrl+S"}, {"-", "F1"}, {"RS", "PgUp/PgDn"},

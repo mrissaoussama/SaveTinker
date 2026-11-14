@@ -245,7 +245,7 @@ private:
         case WidgetKind::Integer:
         case WidgetKind::Float: {
             const bool editable = node.editable();
-            const auto result = ui::row("##n", label, (editable ? "\xE2\x80\xB9  " : "") + formatNumber(node) + (editable ? "  \xE2\x80\xBA" : ""),
+            const auto result = ui::row("##n", label, editable ? ui::stepper(formatNumber(node)) : formatNumber(node),
                                         editable ? ui::color::Text : ui::color::TextDim);
             trackFocus(node, result);
             if (!editable) break;

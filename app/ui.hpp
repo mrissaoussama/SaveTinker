@@ -67,5 +67,7 @@ void qrCode(const std::string& text, float size);
 bool primaryButton(const char* label, float width = 0.0f);
 void progressBar(float fraction, const std::string& overlay);
 std::string formatSize(std::uint64_t bytes);
+// "‹  text  ›" for values changed with left/right, with ASCII arrows when the font lacks the quotes.
+std::string stepper(const std::string& text);
 
 }

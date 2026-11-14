@@ -15,8 +15,11 @@ public:
 
     // Call before ImGui::NewFrame. Returns false once the script asks to quit.
     bool beforeFrame();
-    // Call after rendering, before swapping buffers.
+    // Call after rendering, before swapping buffers. Reads the OpenGL framebuffer.
     void afterRender(int width, int height);
+    // For renderers without glReadPixels: check, then hand over top-down RGBA pixels.
+    bool wantsShot() const { return !pendingShot_.empty(); }
+    void saveShot(const std::vector<unsigned char>& rgba, int width, int height);
 
 private:
     struct Step {
