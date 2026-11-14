@@ -46,6 +46,8 @@ void beginFrame();
 bool wasDragged();
 // Call once per frame after the screen is drawn.
 void dragScroll();
+// Moving past the last row lands on the first and the other way round. Call before ending the window.
+void wrapNavigation();
 
 struct RowResult {
     ImGuiID id = 0;

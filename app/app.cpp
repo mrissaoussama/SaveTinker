@@ -341,6 +341,7 @@ void App::frame() {
     drawDialog();
     drawPrompt();
     drawTask();
+    ui::wrapNavigation();
     ImGui::End();
     drawToasts();
     ui::dragScroll();

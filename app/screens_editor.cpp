@@ -132,6 +132,7 @@ public:
             for (const auto& link : links) pageRow(link.pageId.c_str(), link.label, link.pageId);
             sidebarHadFocus_ = sidebarFocused;
             ui::holdFocusRequests(false);
+            ui::wrapNavigation();
             ImGui::EndChild();
             ImGui::SameLine();
         }
@@ -157,6 +158,7 @@ public:
         const auto& page = session_->currentPage();
         drawNodes(app, page.nodes, sidebar && crumbs.size() <= 1 && page.id.empty());
         if (page.nodes.empty()) ui::dimText(tr("Nothing here."));
+        ui::wrapNavigation();
         ImGui::EndChild();
 
         drawStatusLine(app);
@@ -214,6 +216,7 @@ private:
             error_ = built.error();
             session_.reset();
         }
+        pageChanged_ = true;
     }
 
     bool hasRootContent() const {

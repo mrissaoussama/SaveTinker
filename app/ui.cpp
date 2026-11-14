@@ -99,6 +99,10 @@ void dragScroll() {
     ImGui::ClearActiveID();
 }
 
+void wrapNavigation() {
+    ImGui::NavMoveRequestTryWrapping(ImGui::GetCurrentWindow(), ImGuiNavMoveFlags_LoopY);
+}
+
 void beginFrame() {
     if (restoreTarget && --restoreFrames < 0) {
         restoreTarget = 0;
