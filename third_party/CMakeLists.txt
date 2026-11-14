@@ -36,3 +36,19 @@ target_compile_options(imgui PRIVATE -w)
 if(NINTENDO_SWITCH OR NINTENDO_3DS)
     target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS)
 endif()
+
+# zstd 1.5.7, decompression only.
+add_library(zstd STATIC
+    zstd/common/entropy_common.c
+    zstd/common/error_private.c
+    zstd/common/fse_decompress.c
+    zstd/common/xxhash.c
+    zstd/common/zstd_common.c
+    zstd/decompress/huf_decompress.c
+    zstd/decompress/zstd_ddict.c
+    zstd/decompress/zstd_decompress.c
+    zstd/decompress/zstd_decompress_block.c
+)
+target_include_directories(zstd SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/zstd)
+target_compile_definitions(zstd PRIVATE ZSTD_DISABLE_ASM ZSTD_LEGACY_SUPPORT=0)
+target_compile_options(zstd PRIVATE -w)

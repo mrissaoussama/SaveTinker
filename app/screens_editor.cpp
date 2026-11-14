@@ -96,11 +96,14 @@ public:
                 if (ui::row("##root", session_->root().title, "", ui::color::TextDim, currentTop.empty()).activated)
                     pending_ = [this, &app] { report(app, session_->openTopLevel("")); };
             }
-            for (const auto& link : links)
-                if (ui::row(link.pageId.c_str(), link.label, "", ui::color::TextDim, link.pageId == currentTop).activated) {
+            for (const auto& link : links) {
+                const bool current = link.pageId == currentTop;
+                if (ui::row(link.pageId.c_str(), link.label, "", ui::color::TextDim, current).activated) {
                     const auto id = link.pageId;
                     pending_ = [this, &app, id] { report(app, session_->openTopLevel(id)); };
                 }
+                if (current && pageChanged_) ImGui::SetScrollHereY(0.5f);
+            }
             ui::holdFocusRequests(false);
             ImGui::EndChild();
             ImGui::SameLine();

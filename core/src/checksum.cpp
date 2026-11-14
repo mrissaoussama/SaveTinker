@@ -68,6 +68,33 @@ std::uint16_t crc16Ccitt(ByteView data, std::uint16_t initial) {
     return crc;
 }
 
+std::uint32_t murmur3(ByteView data, std::uint32_t seed) {
+    constexpr std::uint32_t c1 = 0xcc9e2d51, c2 = 0x1b873593;
+    auto rotl = [](std::uint32_t x, int r) { return (x << r) | (x >> (32 - r)); };
+    std::uint32_t hash = seed;
+    const std::size_t blocks = data.size() / 4;
+    for (std::size_t i = 0; i < blocks; ++i) {
+        std::uint32_t k = static_cast<std::uint32_t>(data[i * 4]) | (static_cast<std::uint32_t>(data[i * 4 + 1]) << 8) |
+                          (static_cast<std::uint32_t>(data[i * 4 + 2]) << 16) | (static_cast<std::uint32_t>(data[i * 4 + 3]) << 24);
+        k = rotl(k * c1, 15) * c2;
+        hash = rotl(hash ^ k, 13) * 5 + 0xe6546b64;
+    }
+    std::uint32_t tail = 0;
+    switch (data.size() & 3) {
+    case 3: tail ^= static_cast<std::uint32_t>(data[blocks * 4 + 2]) << 16; [[fallthrough]];
+    case 2: tail ^= static_cast<std::uint32_t>(data[blocks * 4 + 1]) << 8; [[fallthrough]];
+    case 1:
+        tail ^= data[blocks * 4];
+        hash ^= rotl(tail * c1, 15) * c2;
+    }
+    hash ^= static_cast<std::uint32_t>(data.size());
+    hash ^= hash >> 16;
+    hash *= 0x85ebca6b;
+    hash ^= hash >> 13;
+    hash *= 0xc2b2ae35;
+    return hash ^ (hash >> 16);
+}
+
 std::uint32_t adler32(ByteView data) {
     constexpr std::uint32_t modulus = 65521;
     std::uint32_t a = 1, b = 0;

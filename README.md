@@ -173,6 +173,9 @@ Offsets are zero-based. Endian arguments are `"little"`/`"le"` or `"big"`/`"be"`
 | `file:find(data[, from])`, `file:size()`, `file:endian([endian])` | Search, size, default byte order |
 | `st.transaction(label, fn)` | Groups writes into one undo step, rolled back on error |
 | `st.hash.crc32/crc16/adler32/md5/sha1/sha256(data)` | Digests return raw bytes |
+| `st.hash.murmur3(data[, seed])` | 32-bit MurmurHash3, common for hashed names |
+| `st.zstd.decompress(data[, dictionaries])` | zstd, picking the dictionary the frame asks for |
+| `st.format.sarc(data)`, `st.format.byml(data)`, `st.format.msbt(data[, raw])` | Nintendo archives, BYML documents and message files |
 | `st.hex(data)`, `st.unhex(text)` | Hex conversion |
 | `st.json.decode(text)`, `st.json.encode(value[, pretty])`, `st.json.null` | JSON |
 | `require(name)` | Loads `name.lua` from the editor folder, then the shared library folder |
