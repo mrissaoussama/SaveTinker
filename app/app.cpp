@@ -61,6 +61,15 @@ void App::saveSettings() {
 }
 
 void App::reloadTitles() {
+    std::vector<st::GameTarget> known;
+    auto collect = [&](const std::vector<st::GameTarget>& games) {
+        for (const auto& game : games)
+            if (!game.savePaths.empty()) known.push_back(game);
+    };
+    for (const auto& editor : editors_.list()) collect(editor.manifest.games);
+    for (const auto& repo : catalog_.repos())
+        for (const auto& editor : repo.index.editors) collect(editor.games);
+    static_cast<st::FileSavePlatform&>(*platform_).setKnownGames(std::move(known));
     titles_.clear();
     userNames_.clear();
     for (const auto& user : platform_->users()) userNames_[user.id] = user.nickname;
@@ -113,7 +122,39 @@ void App::applySaveFolders() {
     for (const auto& folder : settings_.saveFolders.empty() ? system_.defaultSaveFolders() : settings_.saveFolders)
         folders.emplace_back(folder);
     folders.push_back(platform_->dataRoot() / "saves");
-    static_cast<st::FileSavePlatform&>(*platform_).setFolders(std::move(folders));
+    auto& files = static_cast<st::FileSavePlatform&>(*platform_);
+    files.setFolders(std::move(folders));
+    files.setLocations(settings_.saveLocations);
+}
+
+std::string App::knownGameName(const std::string& platform, const std::string& titleId) {
+    auto named = [&](const std::vector<st::GameTarget>& games) -> std::string {
+        for (const auto& game : games)
+            if (!game.generic() && game.matches(platform, titleId) && !game.name.empty()) return game.name;
+        return {};
+    };
+    for (const auto& editor : editors_.list())
+        if (auto name = named(editor.manifest.games); !name.empty()) return name;
+    for (const auto& repo : catalog_.repos())
+        for (const auto& editor : repo.index.editors)
+            if (auto name = named(editor.games); !name.empty()) return name;
+    return {};
+}
+
+void App::addSaveLocation(const std::filesystem::path& path) {
+    auto location = st::describeSaveLocation(path);
+    auto& locations = settings_.saveLocations;
+    if (std::ranges::find(locations, location.path, &st::SaveLocation::path) != locations.end()) {
+        toast(tr("That save is already added"), true);
+        return;
+    }
+    if (!location.titleId.empty())
+        if (auto name = knownGameName(location.platform, location.titleId); !name.empty()) location.name = name;
+    toast(tr("Added ") + location.name);
+    locations.push_back(std::move(location));
+    saveSettings();
+    applySaveFolders();
+    reloadTitles();
 }
 
 void App::applyLanguage() {

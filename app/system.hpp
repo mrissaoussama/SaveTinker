@@ -31,6 +31,7 @@ public:
     virtual std::filesystem::path appPath() const = 0;
     virtual bool hasTouchKeyboard() const { return false; }
     virtual bool usesKeyboard() const { return true; }
+    virtual bool acceptsDroppedFiles() const { return false; }
     virtual std::vector<std::string> defaultSaveFolders() const { return {}; }
     virtual std::string environmentWarning() const { return {}; }
     virtual void requestRestart() {}

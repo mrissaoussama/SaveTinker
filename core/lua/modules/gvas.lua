@@ -1,4 +1,4 @@
--- Unreal Engine save games ("GVAS", UE4 and UE5 before 5.4).
+-- Unreal Engine save games ("GVAS"), UE4 and UE5.
 local gvas = {}
 
 local fixedTypes = {
@@ -11,6 +11,11 @@ local fixedStructs = {
     Vector = { "x", "y", "z" }, Rotator = { "pitch", "yaw", "roll" }, Quat = { "x", "y", "z", "w" },
     Vector2D = { "x", "y" }, LinearColor = { "r", "g", "b", "a" }, Vector4 = { "x", "y", "z", "w" },
 }
+local BYTE_ARRAY_ROWS = 256
+
+-- UE5 object versions that change the layout.
+local OVERRIDABLE_SERIALIZATION = 1011
+local COMPLETE_TYPE_NAME = 1012
 
 local Reader = {}
 Reader.__index = Reader
@@ -20,7 +25,7 @@ local function fail(reader, message)
 end
 
 function Reader:need(count)
-    if self.pos + count > self.size then fail(self, "unexpected end of file") end
+    if count < 0 or self.pos + count > self.size then fail(self, "unexpected end of file") end
 end
 
 function Reader:read(kind)
@@ -36,7 +41,7 @@ function Reader:skip(count)
     self.pos = self.pos + count
 end
 
--- Returns the text and a description of where it sits, so it can be rewritten.
+-- Returns the text and where it sits, so it can be rewritten.
 function Reader:fstring()
     local at = self.pos
     local length = self:read("s32")
@@ -63,13 +68,25 @@ function Reader:guid()
     if self:read("u8") ~= 0 then self:skip(16) end
 end
 
+-- UE 5.4+ writes the full type as a tree: name, parameter count, then the parameters.
+function Reader:typeName(depth)
+    depth = depth or 0
+    if depth > 16 then fail(self, "type name too deep") end
+    local node = { name = self:fstring(), params = {} }
+    local count = self:read("s32")
+    if count < 0 or count > 64 then fail(self, "bad type name") end
+    for i = 1, count do node.params[i] = self:typeName(depth + 1) end
+    return node
+end
+
 local function scalar(name, kind, at, sizes)
     return { name = name, kind = kind, at = at, sizes = sizes }
 end
 
 local properties
 
-local function element(reader, name, kind, structName, sizes, bodyEnd)
+-- `kind` is the property type, `struct` the struct name for StructProperty.
+local function element(reader, name, kind, struct, sizes, bodyEnd)
     if fixedTypes[kind] then
         local at = reader.pos
         reader:read(fixedTypes[kind])
@@ -82,33 +99,33 @@ local function element(reader, name, kind, structName, sizes, bodyEnd)
         local text, place = reader:fstring()
         return { name = name, kind = "string", value = text, place = place, sizes = sizes }
     elseif kind == "StructProperty" then
-        local fields = fixedStructs[structName]
+        local fields = fixedStructs[struct]
         local width = fields and bodyEnd and (bodyEnd - reader.pos) // #fields
         if fields and (width == 4 or width == 8) then
-            local node = { name = name, kind = "struct", struct = structName, children = {} }
+            local node = { name = name, kind = "struct", struct = struct, children = {} }
             for _, field in ipairs(fields) do
                 local at = reader.pos
                 reader:skip(width)
                 node.children[#node.children + 1] = scalar(field, width == 4 and "f32" or "f64", at, sizes)
             end
             return node
-        elseif structName == "IntPoint" then
-            local node = { name = name, kind = "struct", struct = structName, children = {} }
+        elseif struct == "IntPoint" then
+            local node = { name = name, kind = "struct", struct = struct, children = {} }
             for _, field in ipairs({ "x", "y" }) do
                 node.children[#node.children + 1] = scalar(field, "s32", reader.pos, sizes)
                 reader:skip(4)
             end
             return node
-        elseif structName == "DateTime" or structName == "Timespan" then
+        elseif struct == "DateTime" or struct == "Timespan" then
             local at = reader.pos
             reader:skip(8)
             return scalar(name, "s64", at, sizes)
-        elseif structName == "Guid" then
+        elseif struct == "Guid" then
             local at = reader.pos
             reader:skip(16)
-            return { name = name, kind = "raw", at = at, length = 16, struct = structName }
+            return { name = name, kind = "raw", at = at, length = 16, struct = struct }
         end
-        return { name = name, kind = "struct", struct = structName, children = properties(reader, sizes) }
+        return { name = name, kind = "struct", struct = struct, children = properties(reader, sizes) }
     end
     return nil
 end
@@ -118,103 +135,167 @@ local function raw(reader, name, kind, bodyStart, size)
     return { name = name, kind = "raw", type = kind, at = bodyStart, length = size }
 end
 
-local function arrayBody(reader, name, inner, sizes, bodyStart, size)
-    local node = { name = name, kind = "array", type = inner, children = {}, countAt = reader.pos }
+-- `inner` is {type =, struct =} of the elements.
+local function arrayBody(reader, tag, inner, sizes, bodyStart)
+    local size = tag.size
+    local node = { name = tag.name, kind = "array", type = inner.type, children = {}, countAt = reader.pos }
     local count = reader:read("s32")
-    local structName
+    local kind, struct = inner.type, inner.struct
     local elementSizes = sizes
-    if inner == "StructProperty" then
+    if kind == "StructProperty" and not reader.typeNames then
         reader:fstring()
         reader:fstring()
         local innerSize = reader.pos
         reader:skip(8)
-        structName = reader:fstring()
+        struct = reader:fstring()
         reader:skip(16)
         reader:guid()
         elementSizes = { table.unpack(sizes) }
         elementSizes[#elementSizes + 1] = innerSize
-        node.struct = structName
     end
-    if inner == "ByteProperty" and size - 4 ~= count then inner = "EnumProperty" end
+    node.struct = struct
+    if kind == "ByteProperty" and size - 4 == count and not inner.enum then
+        if count > BYTE_ARRAY_ROWS then
+            reader:skip(count)
+            return { name = tag.name, kind = "bytes", type = "ArrayProperty", at = bodyStart + 4, length = count }
+        end
+    elseif kind == "ByteProperty" then
+        kind = "EnumProperty"
+    end
     for i = 1, count do
-        local child = element(reader, "[" .. (i - 1) .. "]", inner, structName, elementSizes,
-            structName and fixedStructs[structName] and reader.pos + (bodyStart + size - reader.pos) // count)
-        if not child then return raw(reader, name, "ArrayProperty", bodyStart, size) end
+        local child = element(reader, "[" .. (i - 1) .. "]", kind, struct, elementSizes,
+            struct and fixedStructs[struct] and reader.pos + (bodyStart + size - reader.pos) // (count - i + 1))
+        if not child then return raw(reader, tag.name, "ArrayProperty", bodyStart, size) end
         node.children[i] = child
     end
     return node
 end
 
-local function mapBody(reader, name, keyType, valueType, sizes, bodyStart, size)
-    if keyType == "StructProperty" then return raw(reader, name, "MapProperty", bodyStart, size) end
+local function mapBody(reader, tag, sizes, bodyStart)
+    if tag.key.type == "StructProperty" and not tag.key.struct then return raw(reader, tag.name, "MapProperty", bodyStart, tag.size) end
     reader:read("s32")
     local count = reader:read("s32")
-    local node = { name = name, kind = "map", children = {} }
+    local node = { name = tag.name, kind = "map", children = {} }
     for i = 1, count do
-        local key = element(reader, "key", keyType, nil, sizes)
-        local value = element(reader, "value", valueType, nil, sizes)
-        if not key or not value then return raw(reader, name, "MapProperty", bodyStart, size) end
-        local label = key.kind == "string" and key.value or ("[" .. (i - 1) .. "]")
+        local key = element(reader, "key", tag.key.type, tag.key.struct, sizes)
+        local value = element(reader, "value", tag.value.type, tag.value.struct, sizes)
+        if not key or not value then return raw(reader, tag.name, "MapProperty", bodyStart, tag.size) end
+        local named = key.kind == "string" and key or key.children and key.children[1]
+        local label = named and named.kind == "string" and named.value or ("[" .. (i - 1) .. "]")
         node.children[i] = { name = label, kind = "entry", key = key, value = value }
     end
     return node
 end
 
+-- {type =, struct =, enum =} from a type name tree parameter.
+local function innerType(param)
+    if not param then return { type = "None" } end
+    local result = { type = param.name }
+    if param.name == "StructProperty" and param.params[1] then result.struct = param.params[1].name end
+    if param.name == "ByteProperty" and param.params[1] then
+        result.enum = param.params[1].name
+        result.type = "EnumProperty"
+    end
+    return result
+end
+
+-- UE 5.4+ tag: name, type tree, size, flags.
+local function readTypedTag(reader, name)
+    local tag = { name = name }
+    local typeName = reader:typeName()
+    tag.type = typeName.name
+    tag.sizeAt = reader.pos
+    tag.size = reader:read("s32")
+    tag.flagsAt = reader.pos
+    local flags = reader:read("u8")
+    if flags & 0x01 ~= 0 then tag.index = reader:read("s32") end
+    if flags & 0x02 ~= 0 then reader:skip(16) end
+    if flags & 0x04 ~= 0 then
+        if reader:read("u8") & 0x02 ~= 0 then reader:skip(2) end
+    end
+    tag.boolTrue = flags & 0x10 ~= 0
+    local params = typeName.params
+    if tag.type == "StructProperty" then
+        tag.struct = params[1] and params[1].name
+    elseif tag.type == "ByteProperty" then
+        tag.enum = params[1] and params[1].name
+    elseif tag.type == "ArrayProperty" or tag.type == "SetProperty" then
+        tag.inner = innerType(params[1])
+    elseif tag.type == "MapProperty" then
+        tag.key, tag.value = innerType(params[1]), innerType(params[2])
+    end
+    return tag
+end
+
+local function readLegacyTag(reader, name)
+    local tag = { name = name, type = reader:fstring() }
+    tag.sizeAt = reader.pos
+    tag.size = reader:read("s32")
+    tag.index = reader:read("s32")
+    local kind = tag.type
+    if kind == "BoolProperty" then
+        tag.boolAt = reader.pos
+        reader:read("u8")
+    elseif kind == "StructProperty" then
+        tag.struct = reader:fstring()
+        reader:skip(16)
+    elseif kind == "ByteProperty" then
+        local enum = reader:fstring()
+        if enum ~= "None" then tag.enum = enum end
+    elseif kind == "EnumProperty" then
+        reader:fstring()
+    elseif kind == "ArrayProperty" or kind == "SetProperty" then
+        tag.inner = { type = reader:fstring() }
+    elseif kind == "MapProperty" then
+        tag.key, tag.value = { type = reader:fstring() }, { type = reader:fstring() }
+    end
+    reader:guid()
+    if reader.extensions and reader:read("u8") & 0x02 ~= 0 then reader:skip(2) end
+    return tag
+end
+
 local function property(reader, sizes)
     local name = reader:fstring()
     if name == "None" then return nil end
-    local kind = reader:fstring()
-    local sizeAt = reader.pos
-    local size = reader:read("s32")
-    local index = reader:read("s32")
-    if index > 0 then name = name .. "[" .. index .. "]" end
+    local tag = reader.typeNames and readTypedTag(reader, name) or readLegacyTag(reader, name)
+    if tag.index and tag.index > 0 then tag.name = name .. "[" .. tag.index .. "]" end
     local inner = { table.unpack(sizes) }
-    inner[#inner + 1] = sizeAt
+    inner[#inner + 1] = tag.sizeAt
+    local kind = tag.type
 
     if kind == "BoolProperty" then
-        local at = reader.pos
-        reader:read("u8")
-        reader:guid()
-        local node = scalar(name, "bool", at, inner)
+        local node
+        if tag.boolAt then
+            node = scalar(tag.name, "bool", tag.boolAt, inner)
+        else
+            node = { name = tag.name, kind = "bool", at = tag.flagsAt, mask = 0x10 }
+            reader:skip(tag.size)
+        end
         node.type = kind
         return node
     end
 
     local parse
     if kind == "StructProperty" then
-        local structName = reader:fstring()
-        reader:skip(16)
-        reader:guid()
-        parse = function(bodyStart) return element(reader, name, kind, structName, inner, bodyStart + size) end
+        parse = function(bodyStart) return element(reader, tag.name, kind, tag.struct, inner, bodyStart + tag.size) end
     elseif kind == "ByteProperty" then
-        local enumName = reader:fstring()
-        reader:guid()
-        local byte = enumName == "None" and size == 1
-        parse = function() return element(reader, name, byte and "ByteProperty" or "EnumProperty", nil, inner) end
-    elseif kind == "EnumProperty" then
-        reader:fstring()
-        reader:guid()
-        parse = function() return element(reader, name, kind, nil, inner) end
+        local byte = not tag.enum and tag.size == 1
+        parse = function() return element(reader, tag.name, byte and "ByteProperty" or "EnumProperty", nil, inner) end
     elseif kind == "ArrayProperty" or kind == "SetProperty" then
-        local innerType = reader:fstring()
-        reader:guid()
         parse = function(bodyStart)
             if kind == "SetProperty" then reader:read("s32") end
-            return arrayBody(reader, name, innerType, inner, bodyStart, size)
+            return arrayBody(reader, tag, tag.inner, inner, bodyStart)
         end
     elseif kind == "MapProperty" then
-        local keyType = reader:fstring()
-        local valueType = reader:fstring()
-        reader:guid()
-        parse = function(bodyStart) return mapBody(reader, name, keyType, valueType, inner, bodyStart, size) end
+        parse = function(bodyStart) return mapBody(reader, tag, inner, bodyStart) end
     else
-        reader:guid()
-        parse = function() return element(reader, name, kind, nil, inner) end
+        parse = function() return element(reader, tag.name, kind, nil, inner) end
     end
 
     local bodyStart = reader.pos
+    reader:need(tag.size)
     local ok, node = pcall(parse, bodyStart)
-    if not ok or not node or reader.pos ~= bodyStart + size then node = raw(reader, name, kind, bodyStart, size) end
+    if not ok or not node or reader.pos ~= bodyStart + tag.size then node = raw(reader, tag.name, kind, bodyStart, tag.size) end
     node.type = node.type or kind
     return node
 end
@@ -228,28 +309,44 @@ function properties(reader, sizes)
     end
 end
 
--- Returns {header = ..., properties = {...}} or nil and a reason.
-function gvas.parse(file)
+local function parse(file)
     local reader = setmetatable({ file = file, pos = 0, size = file:size() }, Reader)
     local ok, result = pcall(function()
         if file:size() < 4 or file:bytes(0, 4) ~= "GVAS" then fail(reader, "not an Unreal save") end
         reader.pos = 4
         local header = { save_version = reader:read("s32"), package_version = reader:read("s32") }
         if header.save_version >= 3 then header.ue5_version = reader:read("s32") end
-        if header.ue5_version and header.ue5_version >= 1012 then
-            fail(reader, "Unreal 5.4 and later saves are not supported yet")
-        end
+        local ue5 = header.ue5_version or 0
         header.engine = string.format("%d.%d.%d-%d", reader:read("u16"), reader:read("u16"), reader:read("u16"), reader:read("u32"))
         header.branch = reader:fstring()
         reader:read("s32")
         local versions = reader:read("s32")
         reader:skip(versions * 20)
         header.class = reader:fstring()
+        reader.extensions = ue5 >= OVERRIDABLE_SERIALIZATION and ue5 < COMPLETE_TYPE_NAME
+        reader.typeNames = ue5 >= COMPLETE_TYPE_NAME
+        if ue5 >= OVERRIDABLE_SERIALIZATION and reader:read("u8") & 0x02 ~= 0 then reader:skip(1) end
         return { header = header, properties = properties(reader, {}) }
     end)
     if ok then return result end
     if type(result) == "table" and result.gvas then return nil, result.message end
     error(result, 0)
+end
+
+-- Editors rebuild after every change, so the last few parses are kept by content.
+local cache = {}
+
+-- Returns {header = ..., properties = {...}} or nil and a reason.
+function gvas.parse(file)
+    local content = file:content()
+    local key = #content .. ":" .. st.hash.crc32(content)
+    for _, entry in ipairs(cache) do
+        if entry.key == key and entry.content == content then return entry.result, entry.reason end
+    end
+    local result, reason = parse(file)
+    table.insert(cache, 1, { key = key, content = content, result = result, reason = reason })
+    cache[5] = nil
+    return result, reason
 end
 
 local function encodeString(text)
@@ -271,7 +368,12 @@ end
 
 -- A binding for a scalar or string node; strings may change length, which updates every enclosing size.
 function gvas.bind(file, node)
-    if node.kind == "bool" then
+    if node.kind == "bool" and node.mask then
+        return st.bind(function() return file:u8(node.at) & node.mask ~= 0 end, function(on)
+            local flags = file:u8(node.at)
+            file:set(node.at, "u8", on and (flags | node.mask) or (flags & ~node.mask & 0xFF))
+        end)
+    elseif node.kind == "bool" then
         return st.bind(function() return file:u8(node.at) ~= 0 end, function(on) file:set(node.at, "u8", on and 1 or 0) end)
     elseif node.kind == "string" then
         return st.bind(function() return node.value end, function(text)

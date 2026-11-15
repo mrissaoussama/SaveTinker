@@ -3,6 +3,7 @@
 
 #include "savetinker/compression.hpp"
 #include "savetinker/crypto.hpp"
+#include "savetinker/lzstring.hpp"
 
 #include "lua_support.hpp"
 #include "savetinker/checksum.hpp"
@@ -63,6 +64,20 @@ int zstdDecompressLua(lua_State* L) {
     auto result = zstdDecompress(data, dictionaries, kMaxDecompressedSize);
     if (!result) return luaL_error(L, "%s", result.error().c_str());
     pushBytes(L, *result);
+    return 1;
+}
+
+int lzCompressLua(lua_State* L) {
+    const auto text = checkString(L, 1);
+    const auto out = lzCompressToBase64(text);
+    lua_pushlstring(L, out.data(), out.size());
+    return 1;
+}
+
+int lzDecompressLua(lua_State* L) {
+    auto out = lzDecompressFromBase64(checkString(L, 1));
+    if (!out) return luaL_error(L, "%s", out.error().c_str());
+    lua_pushlstring(L, out->data(), out->size());
     return 1;
 }
 
@@ -357,6 +372,13 @@ void registerUtilities(lua_State* L, int stTableIndex) {
     lua_pushcfunction(L, guarded<zstdCompressLua>);
     lua_setfield(L, -2, "compress");
     lua_setfield(L, stTableIndex, "zstd");
+
+    lua_newtable(L);
+    lua_pushcfunction(L, guarded<lzCompressLua>);
+    lua_setfield(L, -2, "compress_base64");
+    lua_pushcfunction(L, guarded<lzDecompressLua>);
+    lua_setfield(L, -2, "decompress_base64");
+    lua_setfield(L, stTableIndex, "lzstring");
 
     auto deflateTable = [&]<DeflateFormat Format>(const char* name) {
         lua_newtable(L);

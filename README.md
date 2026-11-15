@@ -1,9 +1,21 @@
 # SaveTinker
 
-Save editor for Switch and 3DS homebrew. Game support comes from Lua editors installed from repositories.
+A save editor that runs on the Switch, the 3DS and PC. It knows no game by itself: each game is handled by a
+small Lua editor, installed from a repository the way you would add a source to a homebrew store.
 
-- [savetinker-editors](https://github.com/mrissaoussama/savetinker-editors): editors for several games and a generic JSON editor
-- [savetinker-editor-template](https://github.com/mrissaoussama/savetinker-editor-template): start your own repository, with an example that uses every API call
+- Lists the games and saves on the console, backs a save up before the first write and writes it back safely.
+- Editors lay out the screen: numbers, switches, lists, item tables, pictures. Undo, redo, search, and a hex
+  editor for whatever no editor covers yet.
+- Some editors go by save format instead of by game: Unreal Engine (UE4 and UE5), RPG Maker MV/MZ, and JSON
+  saves from Unity and other engines.
+- GBA and DS save files next to their ROMs show up as games.
+- On PC, any save file or folder can be added from Settings or dropped on the window. Emulator folders and Steam
+  `userdata` folders are recognised, so the game's own editor is offered.
+- An editor can be started on the console by marking values in the hex editor, and finished on PC with
+  `savetinker-cli`.
+
+Editors: [savetinker-editors](https://github.com/mrissaoussama/savetinker-editors). To write your own, start
+from [savetinker-editor-template](https://github.com/mrissaoussama/savetinker-editor-template).
 
 ## Building
 
@@ -64,6 +76,20 @@ An editor is a folder with `manifest.json` and Lua files.
 - `api_version`: raised only when a change breaks existing scripts. Older numbers keep working; newer ones are
   refused and marked in repositories. `st.api_version` is the app's number.
 - `icon`: PNG or JPEG, 64 KB at most. `game_data`: read access to the game's files.
+- Any other file in the folder (JSON tables, pictures, binary data) ships with the editor; read it with
+  `st.data(path)`.
+
+PC games have no title id. Use the Steam app id, which becomes `00000000` + the id as hex, and list where the
+game keeps its saves; matching files show up as that game without being added by hand. Copies from other
+stores (GOG, Epic) often save to the same place, so one entry covers them:
+
+```json
+{"platform": "pc", "steam_app_id": 1903340, "name": "Clair Obscur: Expedition 33",
+ "save_paths": ["%LOCALAPPDATA%/Sandfall/Saved/SaveGames/*/EXPEDITION_*.sav"]}
+```
+
+`save_paths` understands `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%`, `%DOCUMENTS%` and `*`/`?` within one
+folder or file name. A game with no Steam release can take any `title_id` not used by another editor.
 
 `main.lua` defines:
 
@@ -143,6 +169,7 @@ Offsets start at 0. Endian is `"little"`/`"le"` or `"big"`/`"be"`. Binary data i
 | `st.format.sarc/byml/msbt(data)` | Nintendo archives and messages |
 | `st.hex`, `st.unhex`, `st.json.decode/encode`, `st.json.null` | |
 | `require(name)` | `name.lua` from the editor (`a.b` is `a/b.lua`), then the shared `_lib` folder |
+| `st.lzstring.compress_base64(text)`, `.decompress_base64(text)` | lz-string, as used by RPG Maker MV |
 | `require("st.gvas")` | Unreal saves: `parse(file)` gives a property tree, `bind(file, node)` edits a value |
 | `require("st.es3")` | Easy Save 3 (Unity): `decode(data[, password])`, `encode(text[, password, {gzip = true}])` |
 | `st.data(path)`, `st.labels(path)` | Editor files; `labels` tries `<dir>/<lang>/<file>` first |
@@ -156,6 +183,8 @@ memory and instruction limits and no network access.
 
 GBA and DS saves (`.sav`, `.srm`, `.sa1`, `.dsv`) in the folders set in Settings appear as games when a ROM with
 the same name sits next to them. Editors see them as `save.bin`.
+
+Saves added on PC keep their file names. A folder opens with every file in it.
 
 Backups are made before the first write, and writing stops if the SD card lacks room for them.
 

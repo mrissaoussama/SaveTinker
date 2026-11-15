@@ -11,6 +11,14 @@ struct RepoEntry {
     bool enabled = true;
 };
 
+// A save file or folder added by hand. An empty title id is made from the path.
+struct SaveLocation {
+    std::string path;
+    std::string name;
+    std::string platform = "pc";
+    std::string titleId;
+};
+
 struct Settings {
     bool autoBackup = true;
     int backupsToKeep = 10;
@@ -21,6 +29,7 @@ struct Settings {
     std::vector<RepoEntry> repos;
     // Folders searched for loose save files (GBA, DS). Empty means the platform defaults.
     std::vector<std::string> saveFolders;
+    std::vector<SaveLocation> saveLocations;
 };
 
 Settings loadSettings(const std::filesystem::path& path);

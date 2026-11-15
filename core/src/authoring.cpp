@@ -69,7 +69,7 @@ std::vector<ValidationIssue> validatePackage(const EditorPackage& package) {
     }
     for (const auto& game : manifest.games)
         if (game.platform != kAnyTitle && game.platform != platforms::Switch && game.platform != platforms::N3ds && game.platform != platforms::Nds &&
-            game.platform != platforms::Gba)
+            game.platform != platforms::Gba && game.platform != platforms::Pc)
             issues.push_back({Severity::Warning, "manifest.json", "unknown platform \"" + game.platform + "\""});
     if (manifest.source.empty())
         issues.push_back({Severity::Warning, "manifest.json", "no \"source\" link, users cannot find the original code"});
@@ -133,6 +133,7 @@ Json gamesToJson(const std::vector<GameTarget>& games) {
         Json item{{"platform", game.platform}, {"title_id", game.titleId}};
         putIfSet(item, "name", game.name);
         putIfSet(item, "versions", game.versions);
+        putIfSet(item, "save_paths", game.savePaths);
         list.push_back(std::move(item));
     }
     return list;

@@ -223,6 +223,78 @@ private:
         });
     }
 
+    static st::SaveLocation* findLocation(App& app, const std::string& path) {
+        auto& locations = app.settings().saveLocations;
+        auto found = std::ranges::find(locations, path, &st::SaveLocation::path);
+        return found == locations.end() ? nullptr : &*found;
+    }
+
+    static void updateLocation(App& app, const std::string& path, const std::function<void(st::SaveLocation&)>& change) {
+        auto* location = findLocation(app, path);
+        if (!location) return;
+        change(*location);
+        app.saveSettings();
+        app.applySaveFolders();
+        app.reloadTitles();
+    }
+
+    static void addLocation(App& app) {
+        app.promptText({tr("Save file or folder"), "", TextKind::Text, 512}, [](App& app, std::string text) {
+            while (!text.empty() && (text.back() == ' ' || text.back() == '"')) text.pop_back();
+            while (!text.empty() && (text.front() == ' ' || text.front() == '"')) text.erase(text.begin());
+            if (text.empty()) return;
+            const auto path = st::pathFromUtf8(text);
+            std::error_code error;
+            if (!std::filesystem::exists(path, error)) {
+                app.toast(tr("Nothing found at that path"), true);
+                return;
+            }
+            app.addSaveLocation(path);
+        });
+    }
+
+    static void editLocation(App& app, const st::SaveLocation& location) {
+        const std::string path = location.path;
+        const std::string name = location.name;
+        const std::string titleId = location.titleId;
+        app.choose(location.name, location.path, {
+            {tr("Rename"), [path, name](App& app) {
+                app.promptText({tr("Name"), name, TextKind::Text, 128}, [path](App& app, std::string text) {
+                    if (!text.empty()) updateLocation(app, path, [&](st::SaveLocation& l) { l.name = text; });
+                });
+            }},
+            {tr("Platform"), [path](App& app) {
+                std::vector<std::pair<std::string, std::function<void(App&)>>> choices;
+                for (const char* platform : {"pc", "switch", "3ds", "nds", "gba"})
+                    choices.emplace_back(st::platformDisplayName(platform), [path, platform](App& app) {
+                        updateLocation(app, path, [&](st::SaveLocation& l) { l.platform = platform; });
+                    });
+                app.choose(tr("Platform"), tr("Editors are matched by platform and game id."), std::move(choices));
+            }},
+            {tr("Game id"), [path, titleId](App& app) {
+                app.promptText({tr("Steam app id, or title id (16 hex digits)"), titleId, TextKind::Text, 16}, [path](App& app, std::string text) {
+                    const bool steam = !text.empty() && text.size() <= 10 &&
+                                       std::ranges::all_of(text, [](unsigned char c) { return std::isdigit(c) != 0; });
+                    if (steam) text = st::steamTitleId(std::stoull(text));
+                    if (!text.empty() && !st::isValidTitleId(text)) {
+                        app.toast(tr("Enter a Steam app id or 16 hex digits"), true);
+                        return;
+                    }
+                    updateLocation(app, path, [&](st::SaveLocation& l) {
+                        l.titleId = st::normalizeTitleId(text);
+                        if (steam) l.platform = "pc";
+                    });
+                });
+            }},
+            {tr("Remove"), [path](App& app) {
+                std::erase_if(app.settings().saveLocations, [&](const st::SaveLocation& l) { return l.path == path; });
+                app.saveSettings();
+                app.applySaveFolders();
+                app.reloadTitles();
+            }},
+        });
+    }
+
     void drawSettings(App& app) {
         auto& settings = app.settings();
         bool changed = false;
@@ -275,6 +347,20 @@ private:
                     app.reloadTitles();
                 });
             }
+        }
+
+        ui::sectionTitle(tr("Added saves"));
+        {
+            const auto& locations = settings.saveLocations;
+            for (std::size_t i = 0; i < locations.size(); ++i) {
+                const auto& location = locations[i];
+                if (ui::row(("##location" + std::to_string(i)).c_str(), location.name, location.path, ui::color::TextDim).activated) {
+                    editLocation(app, location);
+                    break;
+                }
+            }
+            const std::string label = app.system().acceptsDroppedFiles() ? tr("Add a save file or folder (or drop it here)...") : tr("Add a save file or folder...");
+            if (ui::row("##addlocation", label, "", ui::color::Accent).activated) addLocation(app);
         }
 
         ui::sectionTitle(tr("Display"));

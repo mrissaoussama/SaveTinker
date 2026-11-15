@@ -309,6 +309,43 @@ TEST_CASE("st.gvas reads Unreal saves and keeps sizes right when strings change"
               .find("not an Unreal save") != std::string::npos);
 }
 
+TEST_CASE("st.gvas reads UE 5.4 saves with full type names") {
+    Fixture f;
+    f.eval(R"(
+        local function fs(s) return string.pack("<i4", #s + 1) .. s .. "\0" end
+        local function ty(name, ...) local params = { ... } return fs(name) .. string.pack("<i4", #params) .. table.concat(params) end
+        local function prop(name, typeName, flags, body) return fs(name) .. typeName .. string.pack("<i4B", #body, flags) .. body end
+        local data = "GVAS" .. string.pack("<i4i4i4I2I2I2I4", 3, 522, 1012, 5, 4, 4, 0) .. fs("++UE5+Release-5.4") .. string.pack("<i4i4", 3, 0)
+            .. fs("/Script/Game.MySave") .. "\0"
+            .. prop("Gold", ty("IntProperty"), 0, string.pack("<i4", 250))
+            .. prop("Alive", ty("BoolProperty"), 0x10, "")
+            .. prop("Pos", ty("StructProperty", ty("Vector", ty("/Script/CoreUObject"))), 0x08, string.pack("<ddd", 1, 2, 3))
+            .. prop("Items", ty("ArrayProperty", ty("IntProperty")), 0, string.pack("<i4i4i4", 2, 10, 20))
+            .. prop("Quests", ty("MapProperty", ty("NameProperty"), ty("ByteProperty", ty("EState", ty("/Script/Game")))), 0,
+                string.pack("<i4i4", 0, 1) .. fs("Intro") .. fs("EState::Done"))
+            .. prop("Name", ty("StrProperty"), 0, fs("Rin"))
+            .. fs("None") .. string.pack("<i4", 0)
+        st.save:file("save.dat"):setContent(data)
+        return ""
+    )");
+    CHECK(f.eval(R"(
+        local gvas = require("st.gvas")
+        local file = st.save:file("save.dat")
+        local function find(list, name) for _, n in ipairs(list) do if n.name == name then return n end end end
+        local save = assert(gvas.parse(file))
+        local alive = gvas.bind(file, find(save.properties, "Alive"))
+        local before = tostring(alive:get())
+        alive:set(false)
+        gvas.bind(file, find(save.properties, "Name")):set("Rinoa")
+        save = assert(gvas.parse(file))
+        local p = {}
+        for _, node in ipairs(save.properties) do p[node.name] = node end
+        return table.concat({ save.header.engine, #save.properties, gvas.bind(file, p.Gold):get(), before, tostring(gvas.bind(file, p.Alive):get()),
+            p.Pos.children[2].kind, gvas.bind(file, p.Pos.children[2]):get(), gvas.bind(file, p.Items.children[2]):get(),
+            p.Quests.children[1].name, p.Quests.children[1].value.value, p.Name.value }, " ")
+    )") == "5.4.4-0 6 250 true false f64 2.0 20 Intro EState::Done Rinoa");
+}
+
 TEST_CASE("st.es3 round trips encrypted and compressed saves") {
     Fixture f;
     CHECK(f.eval(R"(

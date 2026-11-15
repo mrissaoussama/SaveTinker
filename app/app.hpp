@@ -103,6 +103,8 @@ public:
     std::string language() const;
     void applyLanguage();
     void applySaveFolders();
+    void addSaveLocation(const std::filesystem::path& path);
+    std::string knownGameName(const std::string& platform, const std::string& titleId);
     ImVec2 footerTextPosition() const { return footerLeft_; }
 
 private:

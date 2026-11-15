@@ -1,6 +1,7 @@
 #include <doctest.h>
 
 #include "savetinker/compression.hpp"
+#include "savetinker/lzstring.hpp"
 #include "savetinker/formats.hpp"
 #include "test_support.hpp"
 
@@ -39,4 +40,20 @@ TEST_CASE("zstd compression round trips") {
     CHECK(packed->size() < 100);
     CHECK(*st::zstdDecompress(*packed, {}, 1 << 20) == data);
     CHECK_FALSE(st::zstdCompress(data, 99).has_value());
+}
+
+TEST_CASE("lz-string base64 matches the JavaScript library") {
+    const std::pair<std::string, std::string> cases[] = {
+        {"Hello, world", "BIUwNmD2A0AEDukBOYAmQ==="},
+        {"{\"gold\":250,\"name\":\"R\xC3\xA9 \xE6\x97\xA5\xE6\x9C\xAC\"}", "N4Ig5g9gNgJiBcAmArABgDQgHYEMC2ApgiAEoCXABIKemgNOYgC+QA=="},
+        {std::string(38, 'a'), "IY18ZUkA"},
+        {"\xF0\x9F\x98\x80x", "rwbgA9geQ==="},
+    };
+    for (const auto& [text, encoded] : cases) {
+        CHECK(st::lzCompressToBase64(text) == encoded);
+        CHECK(st::lzDecompressFromBase64(encoded).value() == text);
+    }
+    CHECK(st::lzDecompressFromBase64("").value().empty());
+    CHECK_NOTHROW((void)st::lzDecompressFromBase64("////////"));
+    CHECK_NOTHROW((void)st::lzDecompressFromBase64("BIUwNmD2"));
 }

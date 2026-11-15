@@ -14,6 +14,7 @@ add_library(savetinker_core STATIC
     src/checksum.cpp
     src/code_inspect.cpp
     src/compression.cpp
+    src/lzstring.cpp
     src/crypto.cpp
     src/document.cpp
     src/editor_session.cpp

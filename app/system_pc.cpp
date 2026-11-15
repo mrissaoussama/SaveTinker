@@ -42,6 +42,7 @@ public:
     }
 
     fs::path appPath() const override { return executable_; }
+    bool acceptsDroppedFiles() const override { return true; }
 
 private:
     fs::path console_;

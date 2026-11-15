@@ -75,6 +75,10 @@ int main(int argc, char** argv) {
             while (SDL_PollEvent(&event)) {
                 ImGui_ImplSDL2_ProcessEvent(&event);
                 if (event.type == SDL_QUIT) application.quit();
+                if (event.type == SDL_DROPFILE) {
+                    application.addSaveLocation(st::pathFromUtf8(event.drop.file));
+                    SDL_free(event.drop.file);
+                }
             }
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL2_NewFrame();
