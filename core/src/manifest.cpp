@@ -23,10 +23,6 @@ std::string platformDisplayName(std::string_view platformId) {
     return std::string(platformId);
 }
 
-std::string steamTitleId(std::uint64_t appId) {
-    return std::format("{:016X}", appId);
-}
-
 bool isValidTitleId(std::string_view titleId) {
     return titleId.size() == 16 &&
            std::ranges::all_of(titleId, [](unsigned char c) { return std::isxdigit(c) != 0; });
@@ -77,16 +73,6 @@ GameTarget parseGameTarget(const nlohmann::json& object) {
     if (!object.is_object()) throw FieldError("each game must be an object");
     GameTarget game;
     game.platform = requiredString(object, "platform");
-    if (auto steam = object.find("steam_app_id"); steam != object.end()) {
-        if (!steam->is_number_unsigned() || steam->get<std::uint64_t>() == 0) throw FieldError("steam_app_id must be a positive number");
-        if (game.platform != platforms::Pc) throw FieldError("steam_app_id needs platform \"pc\"");
-        if (object.contains("title_id")) throw FieldError("use either title_id or steam_app_id");
-        game.titleId = steamTitleId(steam->get<std::uint64_t>());
-        game.name = optionalString(object, "name");
-        game.versions = stringList(object, "versions");
-        game.savePaths = stringList(object, "save_paths");
-        return game;
-    }
     const auto titleId = requiredString(object, "title_id");
     if (titleId != kAnyTitle && !isValidTitleId(titleId))
         throw FieldError("invalid title_id \"" + titleId + "\" (expected 16 hex digits or \"*\")");
@@ -94,9 +80,6 @@ GameTarget parseGameTarget(const nlohmann::json& object) {
     if (game.platform == kAnyTitle && !game.generic()) throw FieldError("platform \"*\" needs title_id \"*\"");
     game.name = optionalString(object, "name");
     game.versions = stringList(object, "versions");
-    game.savePaths = stringList(object, "save_paths");
-    if (!game.savePaths.empty() && (game.platform != platforms::Pc || game.generic()))
-        throw FieldError("save_paths needs platform \"pc\" and a game id");
     return game;
 }
 

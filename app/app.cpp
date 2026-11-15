@@ -61,15 +61,6 @@ void App::saveSettings() {
 }
 
 void App::reloadTitles() {
-    std::vector<st::GameTarget> known;
-    auto collect = [&](const std::vector<st::GameTarget>& games) {
-        for (const auto& game : games)
-            if (!game.savePaths.empty()) known.push_back(game);
-    };
-    for (const auto& editor : editors_.list()) collect(editor.manifest.games);
-    for (const auto& repo : catalog_.repos())
-        for (const auto& editor : repo.index.editors) collect(editor.games);
-    static_cast<st::FileSavePlatform&>(*platform_).setKnownGames(std::move(known));
     titles_.clear();
     userNames_.clear();
     for (const auto& user : platform_->users()) userNames_[user.id] = user.nickname;
@@ -127,18 +118,24 @@ void App::applySaveFolders() {
     files.setLocations(settings_.saveLocations);
 }
 
-std::string App::knownGameName(const std::string& platform, const std::string& titleId) {
-    auto named = [&](const std::vector<st::GameTarget>& games) -> std::string {
-        for (const auto& game : games)
-            if (!game.generic() && game.matches(platform, titleId) && !game.name.empty()) return game.name;
-        return {};
+std::vector<st::GameTarget> App::knownGames() {
+    std::vector<st::GameTarget> games;
+    auto collect = [&](const std::vector<st::GameTarget>& list) {
+        for (const auto& game : list) {
+            if (game.generic() || game.platform == st::kAnyTitle) continue;
+            const bool seen = std::ranges::any_of(games, [&](const st::GameTarget& known) {
+                return known.platform == game.platform && known.titleId == game.titleId;
+            });
+            if (!seen) games.push_back(game);
+        }
     };
-    for (const auto& editor : editors_.list())
-        if (auto name = named(editor.manifest.games); !name.empty()) return name;
+    for (const auto& editor : editors_.list()) collect(editor.manifest.games);
     for (const auto& repo : catalog_.repos())
-        for (const auto& editor : repo.index.editors)
-            if (auto name = named(editor.games); !name.empty()) return name;
-    return {};
+        for (const auto& editor : repo.index.editors) collect(editor.games);
+    std::ranges::sort(games, [](const st::GameTarget& a, const st::GameTarget& b) {
+        return (a.name.empty() ? a.titleId : a.name) < (b.name.empty() ? b.titleId : b.name);
+    });
+    return games;
 }
 
 void App::addSaveLocation(const std::filesystem::path& path) {
@@ -148,8 +145,6 @@ void App::addSaveLocation(const std::filesystem::path& path) {
         toast(tr("That save is already added"), true);
         return;
     }
-    if (!location.titleId.empty())
-        if (auto name = knownGameName(location.platform, location.titleId); !name.empty()) location.name = name;
     toast(tr("Added ") + location.name);
     locations.push_back(std::move(location));
     saveSettings();

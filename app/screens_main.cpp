@@ -271,20 +271,31 @@ private:
                     });
                 app.choose(tr("Platform"), tr("Editors are matched by platform and game id."), std::move(choices));
             }},
-            {tr("Game id"), [path, titleId](App& app) {
-                app.promptText({tr("Steam app id, or title id (16 hex digits)"), titleId, TextKind::Text, 16}, [path](App& app, std::string text) {
-                    const bool steam = !text.empty() && text.size() <= 10 &&
-                                       std::ranges::all_of(text, [](unsigned char c) { return std::isdigit(c) != 0; });
-                    if (steam) text = st::steamTitleId(std::stoull(text));
-                    if (!text.empty() && !st::isValidTitleId(text)) {
-                        app.toast(tr("Enter a Steam app id or 16 hex digits"), true);
-                        return;
-                    }
-                    updateLocation(app, path, [&](st::SaveLocation& l) {
-                        l.titleId = st::normalizeTitleId(text);
-                        if (steam) l.platform = "pc";
+            {tr("Game"), [path, titleId](App& app) {
+                std::vector<std::pair<std::string, std::function<void(App&)>>> choices;
+                for (const auto& game : app.knownGames()) {
+                    const auto label = (game.name.empty() ? game.titleId : game.name) + "  (" + st::platformDisplayName(game.platform) + ")";
+                    choices.emplace_back(label, [path, game](App& app) {
+                        updateLocation(app, path, [&](st::SaveLocation& l) {
+                            l.platform = game.platform;
+                            l.titleId = game.titleId;
+                            if (!game.name.empty()) l.name = game.name;
+                        });
+                    });
+                }
+                choices.emplace_back(tr("Enter a title id..."), [path, titleId](App& app) {
+                    app.promptText({tr("Title id (16 hex digits)"), titleId, TextKind::Text, 16}, [path](App& app, std::string text) {
+                        if (!text.empty() && !st::isValidTitleId(text)) {
+                            app.toast(tr("A title id is 16 hex digits"), true);
+                            return;
+                        }
+                        updateLocation(app, path, [&](st::SaveLocation& l) { l.titleId = st::normalizeTitleId(text); });
                     });
                 });
+                choices.emplace_back(tr("None"), [path](App& app) {
+                    updateLocation(app, path, [](st::SaveLocation& l) { l.titleId.clear(); });
+                });
+                app.choose(tr("Game"), tr("The save opens with the editors for this game."), std::move(choices));
             }},
             {tr("Remove"), [path](App& app) {
                 std::erase_if(app.settings().saveLocations, [&](const st::SaveLocation& l) { return l.path == path; });

@@ -9,8 +9,8 @@ small Lua editor, installed from a repository the way you would add a source to 
 - Some editors go by save format instead of by game: Unreal Engine (UE4 and UE5), RPG Maker MV/MZ, and JSON
   saves from Unity and other engines.
 - GBA and DS save files next to their ROMs show up as games.
-- On PC, any save file or folder can be added from Settings or dropped on the window. Emulator folders and Steam
-  `userdata` folders are recognised, so the game's own editor is offered.
+- On PC, any save file or folder can be added from Settings or dropped on the window, then linked to a game so
+  its editors open it.
 - An editor can be started on the console by marking values in the hex editor, and finished on PC with
   `savetinker-cli`.
 
@@ -79,17 +79,14 @@ An editor is a folder with `manifest.json` and Lua files.
 - Any other file in the folder (JSON tables, pictures, binary data) ships with the editor; read it with
   `st.data(path)`.
 
-PC games have no title id. Use the Steam app id, which becomes `00000000` + the id as hex, and list where the
-game keeps its saves; matching files show up as that game without being added by hand. Copies from other
-stores (GOG, Epic) often save to the same place, so one entry covers them:
+PC games have no title id of their own, so pick one. The Steam app id as 16 hex digits avoids clashes
+(1903340 is `00000000001D0AEC`); any 16 hex digits work for a game not on Steam:
 
 ```json
-{"platform": "pc", "steam_app_id": 1903340, "name": "Clair Obscur: Expedition 33",
- "save_paths": ["%LOCALAPPDATA%/Sandfall/Saved/SaveGames/*/EXPEDITION_*.sav"]}
+{"platform": "pc", "title_id": "00000000001D0AEC", "name": "Clair Obscur: Expedition 33"}
 ```
 
-`save_paths` understands `%APPDATA%`, `%LOCALAPPDATA%`, `%USERPROFILE%`, `%DOCUMENTS%` and `*`/`?` within one
-folder or file name. A game with no Steam release can take any `title_id` not used by another editor.
+The user adds the save in Settings and picks the game from the list of games that editors name.
 
 `main.lua` defines:
 
@@ -184,7 +181,8 @@ memory and instruction limits and no network access.
 GBA and DS saves (`.sav`, `.srm`, `.sa1`, `.dsv`) in the folders set in Settings appear as games when a ROM with
 the same name sits next to them. Editors see them as `save.bin`.
 
-Saves added on PC keep their file names. A folder opens with every file in it.
+Saves added on PC keep their file names. A folder opens with every file in it. Until it is linked to a game,
+an added save opens only with editors that take any game.
 
 Backups are made before the first write, and writing stops if the SD card lacks room for them.
 

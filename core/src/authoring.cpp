@@ -133,7 +133,6 @@ Json gamesToJson(const std::vector<GameTarget>& games) {
         Json item{{"platform", game.platform}, {"title_id", game.titleId}};
         putIfSet(item, "name", game.name);
         putIfSet(item, "versions", game.versions);
-        putIfSet(item, "save_paths", game.savePaths);
         list.push_back(std::move(item));
     }
     return list;

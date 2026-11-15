@@ -27,15 +27,11 @@ std::string cartridgeTitleId(const std::string& gameCode);
 std::filesystem::path pathFromUtf8(const std::string& text);
 std::string pathToUtf8(const std::filesystem::path& path);
 
-// Name, platform and title id guessed from where a save sits (emulator folders carry the title id).
+// A PC save named after the folder it sits in. The user links it to a game afterwards.
 SaveLocation describeSaveLocation(const std::filesystem::path& path);
 std::string saveLocationTitleId(const SaveLocation& location);
 // The data folder of an RPG Maker MV/MZ game (the one holding System.json), found from a save.
 std::optional<std::filesystem::path> rpgMakerDataFolder(const std::filesystem::path& save);
-
-// Files and folders matching a save path from a manifest. %APPDATA%, %LOCALAPPDATA%, %USERPROFILE%,
-// %DOCUMENTS% and %HOME% are replaced; * and ? match within one path part.
-std::vector<std::filesystem::path> expandSavePath(std::string_view pattern);
 
 class FileSaveMount : public SaveMount {
 public:
@@ -61,8 +57,6 @@ public:
 
     void setFolders(std::vector<std::filesystem::path> folders);
     void setLocations(std::vector<SaveLocation> locations);
-    // Games whose editors say where their saves are.
-    void setKnownGames(std::vector<GameTarget> games);
     const std::vector<std::filesystem::path>& folders() const { return folders_; }
     Platform& inner() { return *inner_; }
 
@@ -86,7 +80,6 @@ private:
     std::unique_ptr<Platform> inner_;
     std::vector<std::filesystem::path> folders_;
     std::vector<SaveLocation> locations_;
-    std::vector<GameTarget> knownGames_;
 };
 
 }

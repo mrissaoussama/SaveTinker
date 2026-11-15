@@ -73,21 +73,10 @@ TEST_CASE("generic editors match every title, exact targets win") {
               .error().find("icon") != std::string::npos);
 }
 
-TEST_CASE("PC games can be named by Steam app id") {
+TEST_CASE("PC games use a title id like any other game") {
     const auto manifest = st::parseManifest(R"({"id": "me.pc", "name": "PC", "version": "1.0.0",
-        "games": [{"platform": "pc", "steam_app_id": 1903340, "name": "Clair Obscur"}]})");
+        "games": [{"platform": "pc", "title_id": "00000000001D0AEC", "name": "Clair Obscur"}]})");
     REQUIRE(manifest.has_value());
-    CHECK(manifest->games[0].titleId == "00000000001D0AEC");
-    CHECK(manifest->findGame("pc", st::steamTitleId(1903340)) != nullptr);
-    CHECK(st::parseManifest(R"({"id": "me.pc", "name": "PC", "version": "1.0.0",
-        "games": [{"platform": "switch", "steam_app_id": 5}]})").error().find("platform") != std::string::npos);
-}
-
-TEST_CASE("save_paths are only for PC games with an id") {
-    const auto ok = st::parseManifest(R"({"id": "me.pc", "name": "PC", "version": "1.0.0",
-        "games": [{"platform": "pc", "steam_app_id": 1903340, "save_paths": ["%LOCALAPPDATA%/Sandfall/Saved/SaveGames/*/EXPEDITION_*.sav"]}]})");
-    REQUIRE(ok.has_value());
-    CHECK(ok->games[0].savePaths.size() == 1);
-    CHECK_FALSE(st::parseManifest(R"({"id": "me.pc", "name": "PC", "version": "1.0.0",
-        "games": [{"platform": "pc", "title_id": "*", "save_paths": ["x"]}]})").has_value());
+    CHECK(manifest->findGame("pc", "00000000001d0aec") != nullptr);
+    CHECK(manifest->findGame("switch", "00000000001D0AEC") == nullptr);
 }

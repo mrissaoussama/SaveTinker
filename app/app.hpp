@@ -104,7 +104,8 @@ public:
     void applyLanguage();
     void applySaveFolders();
     void addSaveLocation(const std::filesystem::path& path);
-    std::string knownGameName(const std::string& platform, const std::string& titleId);
+    // Games named by installed editors and by the repository catalog, for linking added saves.
+    std::vector<st::GameTarget> knownGames();
     ImVec2 footerTextPosition() const { return footerLeft_; }
 
 private:

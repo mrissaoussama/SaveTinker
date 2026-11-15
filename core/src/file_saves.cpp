@@ -70,10 +70,6 @@ bool isHex(const std::string& text) {
     return !text.empty() && std::ranges::all_of(text, [](unsigned char c) { return std::isxdigit(c) != 0; });
 }
 
-bool isNumber(const std::string& text) {
-    return !text.empty() && std::ranges::all_of(text, [](unsigned char c) { return std::isdigit(c) != 0; });
-}
-
 std::uintmax_t folderSize(const fs::path& folder) {
     std::uintmax_t total = 0;
     std::error_code error;
@@ -106,33 +102,12 @@ std::string pathToUtf8(const fs::path& path) {
 SaveLocation describeSaveLocation(const fs::path& path) {
     SaveLocation location;
     location.path = pathToUtf8(path);
-    std::vector<std::string> parts;
-    for (const auto& part : path) parts.push_back(pathToUtf8(part));
-
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-        const auto& part = parts[i];
-        if (part.size() == 16 && isHex(part) && part != "0000000000000000") {
-            location.titleId = normalizeTitleId(part);
-            location.platform = location.titleId.starts_with("0004") ? "3ds" : "switch";
-        } else if (lower(part) == "userdata" && i + 2 < parts.size() && isNumber(parts[i + 1]) && isNumber(parts[i + 2]) &&
-                   parts[i + 2].size() <= 10) {
-            location.titleId = steamTitleId(std::stoull(parts[i + 2]));
-            location.platform = "pc";
-        } else if (lower(part) == "title" && i + 2 < parts.size() && parts[i + 1].size() == 8 && parts[i + 2].size() == 8 &&
-                   isHex(parts[i + 1]) && isHex(parts[i + 2])) {
-            location.titleId = normalizeTitleId(parts[i + 1] + parts[i + 2]);
-            location.platform = "3ds";
-        }
-    }
-
     std::error_code error;
     const bool folder = fs::is_directory(path, error);
     fs::path game = folder ? path : path.parent_path();
     while (game.has_parent_path() && game != game.root_path() && isGenericFolder(pathToUtf8(game.filename()))) game = game.parent_path();
     std::string name = game == game.root_path() ? "" : pathToUtf8(game.filename());
     if (!folder) name = name.empty() ? pathToUtf8(path.stem()) : name + " - " + pathToUtf8(path.stem());
-    if (!location.titleId.empty())
-        name = location.platform == "pc" ? "Steam app " + std::to_string(std::stoull(location.titleId, nullptr, 16)) : location.titleId;
     location.name = name.empty() ? pathToUtf8(path) : name;
     return location;
 }
@@ -199,107 +174,9 @@ void FileSavePlatform::setLocations(std::vector<SaveLocation> locations) {
     locations_ = std::move(locations);
 }
 
-void FileSavePlatform::setKnownGames(std::vector<GameTarget> games) {
-    knownGames_ = std::move(games);
-}
-
-namespace {
-
-std::string environment(const char* name) {
-    const char* value = std::getenv(name);
-    return value ? value : "";
-}
-
-std::string homeFolder() {
-    auto home = environment("USERPROFILE");
-    return home.empty() ? environment("HOME") : home;
-}
-
-bool wildcardMatch(std::string_view pattern, std::string_view text) {
-    if (pattern.empty()) return text.empty();
-    if (pattern[0] == '*')
-        return wildcardMatch(pattern.substr(1), text) || (!text.empty() && wildcardMatch(pattern, text.substr(1)));
-    if (text.empty()) return false;
-    if (pattern[0] != '?' && std::tolower(static_cast<unsigned char>(pattern[0])) != std::tolower(static_cast<unsigned char>(text[0])))
-        return false;
-    return wildcardMatch(pattern.substr(1), text.substr(1));
-}
-
-}
-
-std::vector<fs::path> expandSavePath(std::string_view pattern) {
-    std::string text(pattern);
-    const std::pair<const char*, std::string> variables[] = {
-        {"%APPDATA%", environment("APPDATA")},
-        {"%LOCALAPPDATA%", environment("LOCALAPPDATA")},
-        {"%USERPROFILE%", homeFolder()},
-        {"%HOME%", homeFolder()},
-        {"%DOCUMENTS%", homeFolder().empty() ? "" : homeFolder() + "/Documents"},
-    };
-    for (const auto& [name, value] : variables) {
-        for (auto at = text.find(name); at != std::string::npos; at = text.find(name, at + value.size())) {
-            if (value.empty()) return {};
-            text.replace(at, std::strlen(name), value);
-        }
-    }
-    if (text.find('%') != std::string::npos) return {};
-    std::ranges::replace(text, '\\', '/');
-
-    std::vector<fs::path> current;
-    std::vector<std::string> parts;
-    for (std::size_t start = 0; start <= text.size();) {
-        const auto end = std::min(text.find('/', start), text.size());
-        parts.push_back(text.substr(start, end - start));
-        start = end + 1;
-    }
-    if (parts.empty()) return {};
-    current.push_back(pathFromUtf8(parts[0].empty() ? "/" : parts[0] + "/"));
-    constexpr std::size_t kMaxMatches = 64;
-    for (std::size_t i = 1; i < parts.size(); ++i) {
-        const auto& part = parts[i];
-        if (part.empty()) continue;
-        std::vector<fs::path> next;
-        for (const auto& base : current) {
-            std::error_code error;
-            if (part.find_first_of("*?") == std::string::npos) {
-                if (fs::exists(base / pathFromUtf8(part), error)) next.push_back(base / pathFromUtf8(part));
-                continue;
-            }
-            for (fs::directory_iterator it(base, fs::directory_options::skip_permission_denied, error), end; !error && it != end;
-                 it.increment(error)) {
-                if (wildcardMatch(part, pathToUtf8(it->path().filename())) && next.size() < kMaxMatches) next.push_back(it->path());
-            }
-        }
-        current = std::move(next);
-        if (current.empty()) break;
-    }
-    std::ranges::sort(current);
-    return current;
-}
-
 std::vector<FileSavePlatform::Found> FileSavePlatform::scanLocations() const {
     std::vector<Found> found;
-    std::set<fs::path> seen;
-    for (const auto& game : knownGames_) {
-        for (const auto& pattern : game.savePaths) {
-            for (const auto& path : expandSavePath(pattern)) {
-                if (!seen.insert(path).second) continue;
-                std::error_code error;
-                const bool folder = fs::is_directory(path, error);
-                Found entry;
-                entry.title.platform = game.platform;
-                entry.title.titleId = game.titleId;
-                entry.title.name = game.name.empty() ? game.titleId : game.name;
-                entry.save.titleId = game.titleId;
-                entry.save.kind = SaveKind::File;
-                entry.save.size = folder ? folderSize(path) : fs::file_size(path, error);
-                entry.save.path = path;
-                found.push_back(std::move(entry));
-            }
-        }
-    }
     for (const auto& location : locations_) {
-        if (seen.contains(pathFromUtf8(location.path))) continue;
         const fs::path path = pathFromUtf8(location.path);
         std::error_code error;
         const bool folder = fs::is_directory(path, error);

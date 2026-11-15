@@ -22,8 +22,6 @@ inline constexpr std::string_view Pc = "pc";
 
 std::string platformDisplayName(std::string_view platformId);
 bool isValidTitleId(std::string_view titleId);
-// PC games use their Steam app id, as 16 hex digits.
-std::string steamTitleId(std::uint64_t appId);
 std::string normalizeTitleId(std::string_view titleId);
 
 struct GameTarget {
@@ -31,8 +29,6 @@ struct GameTarget {
     std::string titleId;
     std::string name;
     std::vector<std::string> versions;
-    // PC: where the game keeps its saves, e.g. "%LOCALAPPDATA%/Game/Saved/SaveGames/*/Slot*.sav".
-    std::vector<std::string> savePaths;
 
     bool supportsVersion(std::string_view gameVersion) const;
     bool generic() const { return titleId == kAnyTitle; }
