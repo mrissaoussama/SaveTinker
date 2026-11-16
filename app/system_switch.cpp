@@ -1,4 +1,5 @@
 #include <cstring>
+#include <format>
 #include <imgui.h>
 #include <switch.h>
 
@@ -120,6 +121,14 @@ public:
 
     std::string environmentWarning() const override {
         return appletMode_ ? "Album mode: less memory. Hold R while starting a game to launch with full memory." : "";
+    }
+
+    bool limitedMemory() const override { return appletMode_; }
+
+    std::optional<std::string> relaunchWithFullMemory(const std::string& titleId) override {
+        const Result rc = appletRequestLaunchApplication(std::stoull(titleId, nullptr, 16), nullptr);
+        if (R_FAILED(rc)) return std::format("the game could not be started (error 0x{:X})", rc);
+        return std::nullopt;
     }
 
     void requestRestart() override {

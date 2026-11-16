@@ -34,6 +34,48 @@ std::optional<Bytes> DirectoryGameData::read(const std::string& path, std::uint6
     return content;
 }
 
+namespace {
+
+// Lists a layer that may be unavailable; the files of the layers above it are still worth showing.
+std::vector<GameDataEntry> safeList(GameData& layer, const std::string& directory) {
+    try {
+        return layer.list(directory);
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+
+}
+
+LayeredGameData::LayeredGameData(std::vector<std::shared_ptr<GameData>> layers) : layers_(std::move(layers)) {}
+
+std::optional<Bytes> LayeredGameData::read(const std::string& path, std::uint64_t maxSize) {
+    for (const auto& layer : layers_)
+        if (auto content = layer->read(path, maxSize)) return content;
+    return std::nullopt;
+}
+
+std::vector<GameDataEntry> LayeredGameData::list(const std::string& directory) {
+    std::vector<GameDataEntry> entries;
+    for (const auto& layer : layers_)
+        // The game itself is the last layer; when it cannot be read, the mod files found so far still count.
+        for (auto& entry : layer == layers_.back() && !entries.empty() ? safeList(*layer, directory) : layer->list(directory))
+            if (std::ranges::find(entries, entry.name, &GameDataEntry::name) == entries.end()) entries.push_back(std::move(entry));
+    std::ranges::sort(entries, {}, &GameDataEntry::name);
+    return entries;
+}
+
+std::shared_ptr<GameData> withModFolders(std::shared_ptr<GameData> base, const std::vector<fs::path>& folders) {
+    std::vector<std::shared_ptr<GameData>> layers;
+    for (const auto& folder : folders) {
+        std::error_code error;
+        if (fs::is_directory(folder, error)) layers.push_back(std::make_shared<DirectoryGameData>(folder));
+    }
+    if (layers.empty()) return base;
+    if (base) layers.push_back(std::move(base));
+    return std::make_shared<LayeredGameData>(std::move(layers));
+}
+
 std::vector<GameDataEntry> DirectoryGameData::list(const std::string& directory) {
     const auto target = resolve(directory);
     if (!target) throw std::invalid_argument("invalid game data path: " + directory);

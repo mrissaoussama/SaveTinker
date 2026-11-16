@@ -33,13 +33,19 @@ bool gameRow(App& app, const TitleEntry& title, std::size_t installedEditors, st
     detail += (detail.empty() ? "" : "  \xC2\xB7  ") + (title.saves.size() == 1 ? tr("1 save") : trf("{} saves", title.saves.size()));
     draw->AddText(ImVec2(textX, start.y + pad * 1.3f + ImGui::GetFontSize()), ui::color::TextDim, detail.c_str());
 
-    std::string tag;
-    ImU32 tagColor = ui::color::Success;
-    if (installedEditors) tag = installedEditors == 1 ? tr("Editor ready") : trf("{} editors", installedEditors);
-    else if (repoEditors) {
-        tag = trf("{} in repos", repoEditors);
-        tagColor = ui::color::Accent;
+    if (installedEditors) {
+        // A green dot marks a game that has an editor ready; a number beside it counts several.
+        const float radius = ImGui::GetFontSize() * 0.3f;
+        const std::string count = installedEditors > 1 ? std::to_string(installedEditors) : "";
+        const float countWidth = count.empty() ? 0 : ImGui::CalcTextSize(count.c_str()).x + radius;
+        const float right = start.x + ImGui::GetContentRegionAvail().x - pad;
+        const ImVec2 centre(right - countWidth - radius, start.y + height * 0.5f);
+        draw->AddCircleFilled(centre, radius, ui::color::Success);
+        if (!count.empty())
+            draw->AddText(ImVec2(right - countWidth + radius, start.y + (height - ImGui::GetFontSize()) * 0.5f), ui::color::Success, count.c_str());
     }
+    const std::string tag = !installedEditors && repoEditors ? trf("{} in repos", repoEditors) : "";
+    const ImU32 tagColor = ui::color::Accent;
     if (!tag.empty()) {
         const float width = ImGui::CalcTextSize(tag.c_str()).x + pad * 1.6f;
         ImGui::SetCursorScreenPos(ImVec2(start.x + ImGui::GetContentRegionAvail().x - width - pad, start.y + (height - ImGui::GetFontSize() * 1.2f) * 0.5f));
@@ -160,8 +166,12 @@ private:
             std::string platforms;
             for (const auto& platform : editor.manifest.platforms())
                 platforms += (platforms.empty() ? "" : ", ") + st::platformDisplayName(platform);
-            const bool hasUpdate = std::ranges::any_of(updates, [&](const st::EditorUpdate& u) { return u.editor->id == editor.manifest.id; });
-            const std::string value = hasUpdate ? tr("Update available") : "v" + editor.manifest.version;
+            if (editor.manifest.library()) platforms = tr("Library");
+            const auto update = std::ranges::find_if(updates, [&](const st::EditorUpdate& u) { return u.editor->id == editor.manifest.id; });
+            const bool hasUpdate = update != updates.end();
+            // An arrow and the new version mark an update, so the row needs no extra words.
+            const std::string value = hasUpdate ? std::string(ui::glyph("â", "^")) + " v" + update->editor->version
+                                                : "v" + editor.manifest.version;
             if (ui::row(editor.manifest.id.c_str(), editor.manifest.name + "   " + platforms, value,
                         hasUpdate ? ui::color::Accent : ui::color::TextDim)
                     .activated)
@@ -239,6 +249,26 @@ private:
     }
 
     static void addLocation(App& app) {
+        auto add = [](App& app, const std::filesystem::path& path) { app.addSaveLocation(path); };
+        std::vector<std::pair<std::string, std::function<void(App&)>>> choices;
+        if (app.system().hasNativePicker()) {
+            // The system dialog picks either files or folders, never both.
+            choices.push_back({tr("Pick a file..."), [add](App& app) {
+                pickPath(app, tr("Pick a save file"), FilePick::File, defaultBrowseFolder(), add);
+            }});
+            choices.push_back({tr("Pick a folder..."), [add](App& app) {
+                pickPath(app, tr("Pick the folder that holds the save files"), FilePick::Folder, defaultBrowseFolder(), add);
+            }});
+        } else {
+            choices.push_back({tr("Browse..."), [add](App& app) {
+                pickPath(app, tr("Pick a save file or folder"), FilePick::Either, defaultBrowseFolder(), add);
+            }});
+        }
+        choices.push_back({tr("Type a path..."), [](App& app) { typeLocation(app); }});
+        app.choose(tr("Add a save"), tr("Pick the save file, or the folder that holds the save files."), std::move(choices));
+    }
+
+    static void typeLocation(App& app) {
         app.promptText({tr("Save file or folder"), "", TextKind::Text, 512}, [](App& app, std::string text) {
             while (!text.empty() && (text.back() == ' ' || text.back() == '"')) text.pop_back();
             while (!text.empty() && (text.front() == ' ' || text.front() == '"')) text.erase(text.begin());
@@ -265,7 +295,7 @@ private:
             }},
             {tr("Platform"), [path](App& app) {
                 std::vector<std::pair<std::string, std::function<void(App&)>>> choices;
-                for (const char* platform : {"pc", "switch", "3ds", "nds", "gba"})
+                for (const char* platform : {"pc", "switch", "switch2", "3ds", "nds", "gba"})
                     choices.emplace_back(st::platformDisplayName(platform), [path, platform](App& app) {
                         updateLocation(app, path, [&](st::SaveLocation& l) { l.platform = platform; });
                     });
@@ -348,15 +378,15 @@ private:
                 }
             }
             if (ui::row("##addfolder", tr("Add folder..."), "", ui::color::Accent).activated) {
-                app.promptText({tr("Folder with .sav files"), "", TextKind::Text, 256}, [folders](App& app, std::string folder) {
-                    if (folder.empty()) return;
-                    auto& list = app.settings().saveFolders;
-                    if (list.empty()) list = folders;
-                    list.push_back(folder);
-                    app.saveSettings();
-                    app.applySaveFolders();
-                    app.reloadTitles();
-                });
+                pickPath(app, tr("Pick a folder with save files"), FilePick::Folder, defaultBrowseFolder(),
+                                         [folders](App& app, const std::filesystem::path& path) {
+                                             auto& list = app.settings().saveFolders;
+                                             if (list.empty()) list = folders;
+                                             list.push_back(st::pathToUtf8(path));
+                                             app.saveSettings();
+                                             app.applySaveFolders();
+                                             app.reloadTitles();
+                                         });
             }
         }
 

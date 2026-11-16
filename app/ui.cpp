@@ -1,7 +1,9 @@
 #include "ui.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
+#include <map>
 #include <imgui_internal.h>
 
 #include "savetinker/qr.hpp"
@@ -133,7 +135,10 @@ RowResult row(const char* id, const std::string& label, const std::string& value
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, color::PanelHover);
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, color::AccentDim);
     const bool restoring = restoreTarget && ImGui::GetID("##row") == restoreTarget;
-    if (restoring || (focusRequested && !focusHeld && !restoreTarget)) {
+    // A dialog opened on top keeps the focus; rows behind it take theirs once it closes.
+    ImGuiWindow* modal = ImGui::GetTopMostPopupModal();
+    const bool behindModal = modal && ImGui::GetCurrentWindow()->RootWindow != modal;
+    if (!behindModal && (restoring || (focusRequested && !focusHeld && !restoreTarget))) {
         ImGui::SetKeyboardFocusHere();
         ImGui::SetNavCursorVisible(true);
         focusRequested = false;
@@ -151,13 +156,40 @@ RowResult row(const char* id, const std::string& label, const std::string& value
     const float padding = ImGui::GetStyle().FramePadding.x * 1.5f;
     const float textY = start.y + (rowH - ImGui::GetFontSize()) * 0.5f;
     if (result.focused) draw->AddRectFilled(start, ImVec2(start.x + 4 * ImGui::GetFontSize() / 24, start.y + rowH), color::Accent);
-    const float valueWidth = value.empty() ? 0.0f : ImGui::CalcTextSize(value.c_str()).x;
-    const float labelLimit = start.x + width - valueWidth - padding * 3;
-    draw->PushClipRect(start, ImVec2(std::max(start.x + padding, labelLimit), start.y + rowH), true);
-    draw->AddText(ImVec2(start.x + padding, textY), color::Text, label.c_str());
-    draw->PopClipRect();
-    if (!value.empty()) draw->AddText(ImVec2(start.x + width - valueWidth - padding, textY), valueColor, value.c_str());
+    const float fullValueWidth = value.empty() ? 0.0f : ImGui::CalcTextSize(value.c_str()).x;
+    const float valueWidth = std::min(fullValueWidth, width * 0.55f);
+    const float labelLeft = start.x + padding;
+    const float labelRight = std::max(labelLeft, start.x + width - valueWidth - padding * 3);
+    drawScrollingText(draw, label, ImVec2(labelLeft, textY), labelRight - labelLeft, start.y, start.y + rowH, color::Text,
+                      result.focused);
+    if (!value.empty()) {
+        const float valueLeft = start.x + width - valueWidth - padding;
+        drawScrollingText(draw, value, ImVec2(valueLeft, textY), valueWidth, start.y, start.y + rowH, valueColor, result.focused);
+    }
     return result;
+}
+
+void drawScrollingText(ImDrawList* draw, const std::string& text, ImVec2 position, float width, float top, float bottom, ImU32 color,
+                       bool scroll) {
+    if (text.empty() || width <= 0) return;
+    const float textWidth = ImGui::CalcTextSize(text.c_str()).x;
+    float offset = 0;
+    // Text wider than its space pans back and forth while the row is focused, so long labels stay readable.
+    if (scroll && textWidth > width) {
+        const float overflow = textWidth - width;
+        const float speed = ImGui::GetFontSize() * 2.5f;
+        const float pause = 1.2f;
+        const float travel = overflow / speed;
+        const float period = (travel + pause) * 2;
+        const float t = std::fmod(static_cast<float>(ImGui::GetTime()), period);
+        if (t < pause) offset = 0;
+        else if (t < pause + travel) offset = (t - pause) * speed;
+        else if (t < pause * 2 + travel) offset = overflow;
+        else offset = overflow - (t - pause * 2 - travel) * speed;
+    }
+    draw->PushClipRect(ImVec2(position.x, top), ImVec2(position.x + width, bottom), true);
+    draw->AddText(ImVec2(position.x - offset, position.y), color, text.c_str());
+    draw->PopClipRect();
 }
 
 RowResult wrappedRow(const char* id, const std::string& label, bool selected, int maxLines) {
@@ -291,6 +323,21 @@ void progressBar(float fraction, const std::string& overlay) {
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, color::Accent);
     ImGui::ProgressBar(fraction, ImVec2(-1, 0), overlay.c_str());
     ImGui::PopStyleColor();
+}
+
+const char* glyph(const char* text, const char* fallback) {
+    static std::map<const char*, const char*> chosen;
+    if (auto found = chosen.find(text); found != chosen.end()) return found->second;
+    ImFont* font = ImGui::GetFont();
+    bool drawable = true;
+    for (const char* at = text; *at && drawable;) {
+        unsigned int code = 0;
+        const int length = ImTextCharFromUtf8(&code, at, nullptr);
+        if (length <= 0) break;
+        if (code >= 0x80 && !font->IsGlyphInFont(static_cast<ImWchar>(code))) drawable = false;
+        at += length;
+    }
+    return chosen[text] = drawable ? text : fallback;
 }
 
 const char* dropMark() {

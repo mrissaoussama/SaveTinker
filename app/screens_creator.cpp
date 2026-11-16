@@ -30,8 +30,9 @@ st::EditorTemplate newDraft(App& app, const std::string& titleId) {
     draft.manifest.id = id;
     draft.manifest.name = gameName + " (custom)";
     draft.manifest.version = "0.1.0";
-    draft.manifest.games.push_back({title ? title->info.platform : app.platform().gamePlatform(), titleId,
-                                    title ? title->info.name : "", {}});
+    const std::string platform(st::gameTargetPlatform(title ? title->info.platform : app.platform().gamePlatform()));
+    draft.manifest.games.push_back({platform, titleId,
+                                    title ? title->info.name : "", {}, {}});
     return draft;
 }
 

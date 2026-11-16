@@ -57,7 +57,7 @@ std::vector<ValidationIssue> validatePackage(const EditorPackage& package) {
     const auto& manifest = package.manifest;
     const PackageLimits limits;
 
-    if (!package.find(manifest.entry))
+    if (!manifest.library() && !package.find(manifest.entry))
         issues.push_back({Severity::Error, manifest.entry, "entry script is missing"});
     if (!manifest.icon.empty()) {
         const auto* icon = package.find(manifest.icon);
@@ -68,7 +68,7 @@ std::vector<ValidationIssue> validatePackage(const EditorPackage& package) {
             issues.push_back({Severity::Error, manifest.icon, "icon must be a .png or .jpg"});
     }
     for (const auto& game : manifest.games)
-        if (game.platform != kAnyTitle && game.platform != platforms::Switch && game.platform != platforms::N3ds && game.platform != platforms::Nds &&
+        if (game.platform != kAnyTitle && game.platform != platforms::Switch && game.platform != platforms::Switch2 && game.platform != platforms::N3ds && game.platform != platforms::Nds &&
             game.platform != platforms::Gba && game.platform != platforms::Pc)
             issues.push_back({Severity::Warning, "manifest.json", "unknown platform \"" + game.platform + "\""});
     if (manifest.source.empty())
@@ -109,6 +109,8 @@ PackedEditor packEditor(const EditorPackage& package, std::string_view downloadF
     entry.authors = manifest.authors;
     entry.source = manifest.source;
     entry.games = manifest.games;
+    entry.kind = manifest.kind;
+    entry.dependencies = manifest.dependencies;
     entry.downloadUrl = downloadFolder.empty() ? packed.fileName : std::string(downloadFolder) + "/" + packed.fileName;
     entry.sha256 = toHex(sha256(packed.zip));
     entry.size = packed.zip.size();
@@ -133,9 +135,21 @@ Json gamesToJson(const std::vector<GameTarget>& games) {
         Json item{{"platform", game.platform}, {"title_id", game.titleId}};
         putIfSet(item, "name", game.name);
         putIfSet(item, "versions", game.versions);
+        putIfSet(item, "save_versions", game.saveVersions);
         list.push_back(std::move(item));
     }
     return list;
+}
+
+void putPackageKind(Json& object, const std::string& kind, const std::vector<Dependency>& dependencies) {
+    if (kind != kKindEditor) object["kind"] = kind;
+    if (dependencies.empty()) return;
+    Json list = Json::array();
+    for (const auto& dependency : dependencies) {
+        if (dependency.version == "*") list.push_back(dependency.id);
+        else list.push_back(Json{{"id", dependency.id}, {"version", dependency.version}});
+    }
+    object["dependencies"] = std::move(list);
 }
 
 }
@@ -151,7 +165,9 @@ std::string manifestToJson(const EditorManifest& manifest) {
     if (manifest.entry != "main.lua") root["entry"] = manifest.entry;
     putIfSet(root, "icon", manifest.icon);
     if (manifest.gameData) root["game_data"] = true;
-    root["games"] = gamesToJson(manifest.games);
+    if (manifest.fullMemory) root["full_memory"] = true;
+    putPackageKind(root, manifest.kind, manifest.dependencies);
+    if (!manifest.library() || !manifest.games.empty()) root["games"] = gamesToJson(manifest.games);
     return root.dump(2) + "\n";
 }
 
@@ -162,7 +178,9 @@ std::string repoIndexToJson(const RepoIndex& index) {
     putIfSet(root, "description", index.description);
     root["api_version"] = index.apiVersion;
     putIfSet(root, "platforms", index.platforms);
+    // Libraries go in their own list: older apps read only "editors" and reject an entry without games.
     Json editors = Json::array();
+    Json libraries = Json::array();
     for (const auto& editor : index.editors) {
         Json item{{"id", editor.id}, {"name", editor.name}};
         putIfSet(item, "description", editor.description);
@@ -170,15 +188,17 @@ std::string repoIndexToJson(const RepoIndex& index) {
         item["api_version"] = editor.apiVersion;
         putIfSet(item, "authors", editor.authors);
         putIfSet(item, "source", editor.source);
-        item["games"] = gamesToJson(editor.games);
+        putPackageKind(item, editor.kind, editor.dependencies);
+        if (!editor.library() || !editor.games.empty()) item["games"] = gamesToJson(editor.games);
         item["download"] = editor.downloadUrl;
         putIfSet(item, "sha256", editor.sha256);
         if (editor.size) item["size"] = editor.size;
         putIfSet(item, "changelog", editor.changelog);
         putIfSet(item, "updated", editor.updated);
-        editors.push_back(std::move(item));
+        (editor.library() ? libraries : editors).push_back(std::move(item));
     }
     root["editors"] = std::move(editors);
+    if (!libraries.empty()) root["libraries"] = std::move(libraries);
     return root.dump(2) + "\n";
 }
 

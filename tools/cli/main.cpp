@@ -145,7 +145,10 @@ int validate(const Arguments& args) {
 const st::UiNode* findNode(const std::vector<st::UiNode>& nodes, std::string_view label, bool pageLink) {
     for (const auto& node : nodes) {
         const bool isLink = node.kind == st::WidgetKind::PageLink;
-        if (node.label == label && isLink == pageLink) return &node;
+        // Page titles often end in a detail such as "  (3 fields)"; the part before it names the page too.
+        const auto detail = node.label.find("  (");
+        const bool named = node.label == label || (pageLink && detail != std::string::npos && node.label.substr(0, detail) == label);
+        if (named && isLink == pageLink) return &node;
         if (node.kind == st::WidgetKind::Section || node.kind == st::WidgetKind::Popup)
             if (auto* found = findNode(node.children, label, pageLink)) return found;
     }
@@ -228,6 +231,33 @@ void applySet(st::EditorSession& session, const std::string& assignment) {
     check(session.setValue(node, *value));
 }
 
+// Dependencies are looked up among the folders next to the editor, the way a repository keeps them.
+std::vector<fs::path> siblingDependencies(const fs::path& editorDir, const st::EditorManifest& manifest) {
+    std::vector<std::pair<std::string, fs::path>> available;
+    std::error_code error;
+    for (const auto& entry : fs::directory_iterator(fs::absolute(editorDir).parent_path(), error))
+        if (entry.is_directory())
+            if (auto other = st::readEditorDirectory(entry.path())) available.emplace_back(other->manifest.id, entry.path());
+    std::vector<fs::path> folders;
+    std::vector<std::string> seen{manifest.id};
+    std::vector<st::Dependency> pending = manifest.dependencies;
+    while (!pending.empty()) {
+        const auto dependency = pending.front();
+        pending.erase(pending.begin());
+        if (std::ranges::find(seen, dependency.id) != seen.end()) continue;
+        seen.push_back(dependency.id);
+        auto found = std::ranges::find(available, dependency.id, &std::pair<std::string, fs::path>::first);
+        if (found == available.end()) {
+            std::println(stderr, "warning: dependency {} not found next to the editor", dependency.id);
+            continue;
+        }
+        folders.push_back(found->second);
+        if (auto library = st::readEditorDirectory(found->second))
+            for (const auto& more : library->manifest.dependencies) pending.push_back(more);
+    }
+    return folders;
+}
+
 int run(const Arguments& args) {
     args.allowOnly({"title", "platform", "game-version", "lang", "set", "lua", "out", "game-data"});
     if (args.positional().size() != 2) throw UsageError("run needs an editor folder and a save");
@@ -246,7 +276,8 @@ int run(const Arguments& args) {
     context.language = args.option("lang").value_or("en");
 
     auto document = loadSave(args.positional()[1]);
-    st::ScriptHost host(document, context, st::directoryModuleLoader(editorDir, editorDir.parent_path() / "_lib"));
+    st::ScriptHost host(document, context,
+                        st::packageModuleLoader(editorDir, siblingDependencies(editorDir, manifest), editorDir.parent_path() / "_lib"));
     host.setDataLoader(st::directoryDataLoader(editorDir));
     if (auto gameData = args.option("game-data")) {
         host.setGameDataOpener([folder = fs::path(*gameData)]() -> std::expected<std::shared_ptr<st::GameData>, std::string> {
@@ -258,6 +289,14 @@ int run(const Arguments& args) {
     auto detected = host.detect();
     if (!detected) throw std::runtime_error("detect failed: " + detected.error());
     if (!*detected) std::println(stderr, "warning: detect() does not recognise this save");
+    if (auto version = host.saveVersion(); !version) {
+        throw std::runtime_error("save_version failed: " + version.error());
+    } else if (*version) {
+        const auto* game = manifest.findGame(context.platform, context.titleId);
+        std::println(stderr, "save version {}", **version);
+        if (game && !game->supportsSaveVersion(**version))
+            std::println(stderr, "warning: the editor lists save versions it supports and {} is not one of them", **version);
+    }
 
     for (const auto& code : args.all("lua")) check(host.run(code, "--lua"));
 

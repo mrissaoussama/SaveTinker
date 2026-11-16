@@ -57,3 +57,19 @@ TEST_CASE("data without the SMDH magic is rejected") {
     CHECK_FALSE(st::parseSmdh(st::Bytes(st::kSmdhSize), 1).has_value());
     CHECK_FALSE(st::parseSmdh(st::Bytes(16), 1).has_value());
 }
+
+TEST_CASE("DS banners give the title, publisher and a 32x32 icon") {
+    st::ByteBuffer buffer(st::Bytes(st::kDsBannerMinSize));
+    buffer.writeUtf16(0x240 + 0x100, "Flipnote\nNintendo", 0x80);
+    buffer.write<std::uint16_t>(0x220 + 2, 0x001F);  // palette entry 1: red
+    buffer.write<std::uint8_t>(0x20, 0x10);          // first pixel transparent, second red
+    auto banner = st::parseDsBanner(buffer.view(), 2);
+    REQUIRE(banner.has_value());
+    CHECK(banner->shortTitle == "Flipnote");
+    CHECK(banner->publisher == "Nintendo");
+    REQUIRE(banner->iconTga.size() == 18 + 32 * 32 * 4);
+    CHECK(banner->iconTga[18 + 3] == 0);
+    CHECK(banner->iconTga[18 + 4 + 2] == 255);
+    CHECK(banner->iconTga[18 + 4 + 3] == 255);
+    CHECK_FALSE(st::parseDsBanner(st::Bytes(0x10), 1).has_value());
+}

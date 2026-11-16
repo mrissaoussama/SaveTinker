@@ -8,6 +8,7 @@ local function key(password, iv)
 end
 
 function es3.encrypted(data)
+    if data:sub(1, 2) == "\31\139" then return false end
     return data:match("^%s*[{%[]") == nil and #data >= 32 and #data % 16 == 0
 end
 
@@ -30,6 +31,32 @@ function es3.decode(data, password)
         text = unpacked
     end
     return text
+end
+
+-- Like decode, but also says how the file was stored: { text =, encrypted =, gzip = }, so encode can
+-- write it back the same way. Without a password an encrypted file gives nil and "encrypted".
+function es3.open(data, password)
+    local info = { encrypted = es3.encrypted(data), gzip = false }
+    local inner = data
+    if info.encrypted then
+        if not password then return nil, "encrypted" end
+        local iv = data:sub(1, 16)
+        local ok, plain = pcall(st.crypto.aes_decrypt, "cbc", key(password, iv), data:sub(17), iv)
+        if not ok then return nil, plain end
+        local pad = plain:byte(-1)
+        if not pad or pad < 1 or pad > 16 or plain:sub(-pad) ~= string.rep(string.char(pad), pad) then
+            return nil, "wrong password"
+        end
+        inner = plain:sub(1, -pad - 1)
+    end
+    if inner:sub(1, 2) == "\31\139" then
+        local ok, unpacked = pcall(st.gzip.decompress, inner)
+        if not ok then return nil, unpacked end
+        info.gzip = true
+        inner = unpacked
+    end
+    info.text = inner
+    return info
 end
 
 function es3.encode(text, password, options)

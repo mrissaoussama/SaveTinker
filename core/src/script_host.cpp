@@ -35,12 +35,19 @@ std::optional<std::string> readTextFile(const fs::path& path) {
 }
 
 ModuleLoader directoryModuleLoader(fs::path editorDir, fs::path libraryDir) {
-    return [editorDir = std::move(editorDir), libraryDir = std::move(libraryDir)](std::string_view name) -> std::optional<std::string> {
+    return packageModuleLoader(std::move(editorDir), {}, std::move(libraryDir));
+}
+
+ModuleLoader packageModuleLoader(fs::path editorDir, std::vector<fs::path> dependencyDirs, fs::path libraryDir) {
+    std::vector<fs::path> roots{std::move(editorDir)};
+    for (auto& dir : dependencyDirs) roots.push_back(std::move(dir));
+    roots.push_back(std::move(libraryDir));
+    return [roots = std::move(roots)](std::string_view name) -> std::optional<std::string> {
         if (!isValidModuleName(name)) return std::nullopt;
         std::string relative(name);
         std::ranges::replace(relative, '.', '/');
         relative += ".lua";
-        for (const auto& root : {editorDir, libraryDir}) {
+        for (const auto& root : roots) {
             if (root.empty()) continue;
             if (auto code = readTextFile(root / relative)) return code;
         }
@@ -273,12 +280,13 @@ struct ScriptHost::Impl {
         lua_setfield(L, -2, "api_version");
 
         lua_newtable(L);
-        setStringField("id", context.platform);
+        // Editors written for Switch check for "switch"; the name still says Switch 2.
+        setStringField("id", std::string(gameTargetPlatform(context.platform)));
         setStringField("name", platformDisplayName(context.platform));
         lua_setfield(L, -2, "platform");
 
         lua_newtable(L);
-        setStringField("platform", context.platform);
+        setStringField("platform", std::string(gameTargetPlatform(context.platform)));
         setStringField("title_id", context.titleId);
         setStringField("name", context.gameName);
         setStringField("version", context.gameVersion);
@@ -414,6 +422,18 @@ std::expected<bool, std::string> ScriptHost::detect() {
     impl_->detectReason = !matched && lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
     lua_pop(L, 2);
     return matched;
+}
+
+std::expected<std::optional<std::string>, std::string> ScriptHost::saveVersion() {
+    if (!hasFunction("save_version")) return std::nullopt;
+    lua_State* L = impl_->L;
+    lua_getglobal(L, "save_version");
+    lua::pushSave(L, impl_->document);
+    if (auto called = impl_->protectedCall(1, 1); !called) return std::unexpected(called.error());
+    std::optional<std::string> version;
+    if (lua_type(L, -1) == LUA_TSTRING || lua_type(L, -1) == LUA_TNUMBER) version = lua_tostring(L, -1);
+    lua_pop(L, 1);
+    return version;
 }
 
 const std::string& ScriptHost::detectReason() const {

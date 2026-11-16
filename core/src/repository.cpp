@@ -43,7 +43,9 @@ RepoEditorEntry parseEditorEntry(const nlohmann::json& object, std::string_view 
     entry.apiVersion = optionalInt(object, "api_version", kApiVersion);
     entry.authors = stringList(object, "authors");
     entry.source = optionalString(object, "source");
-    entry.games = parseGameTargets(object);
+    entry.kind = parseKind(object);
+    entry.dependencies = parseDependencies(object);
+    entry.games = parseGameTargets(object, entry.kind != kKindLibrary);
     entry.downloadUrl = resolveUrl(indexUrl, requiredString(object, "download"));
     entry.sha256 = optionalString(object, "sha256");
     if (!entry.sha256.empty()) {
@@ -78,6 +80,14 @@ std::expected<RepoIndex, std::string> parseRepoIndex(std::string_view json, std:
         if (auto editors = root.find("editors"); editors != root.end()) {
             if (!editors->is_array()) return std::unexpected("\"editors\" must be a list");
             for (const auto& item : *editors) index.editors.push_back(parseEditorEntry(item, indexUrl));
+        }
+        if (auto libraries = root.find("libraries"); libraries != root.end()) {
+            if (!libraries->is_array()) return std::unexpected("\"libraries\" must be a list");
+            for (const auto& item : *libraries) {
+                auto entry = parseEditorEntry(item, indexUrl);
+                if (entry.kind != kKindLibrary) throw FieldError("\"" + entry.id + "\" is listed under libraries but is not one");
+                index.editors.push_back(std::move(entry));
+            }
         }
         for (const auto& editor : index.editors)
             for (const auto& game : editor.games)
@@ -117,6 +127,22 @@ std::vector<EditorMatch> RepoCatalog::findEditors(std::string_view platform, std
         return a.versionSupported > b.versionSupported;
     });
     return matches;
+}
+
+EditorMatch RepoCatalog::findPackage(std::string_view id, std::string_view versionPattern) const {
+    EditorMatch best;
+    std::optional<Version> bestVersion;
+    for (const auto& repo : repos_) {
+        if (!repo.enabled) continue;
+        for (const auto& editor : repo.index.editors) {
+            if (editor.id != id || !versionMatches(versionPattern, editor.version)) continue;
+            const auto version = Version::parse(editor.version);
+            if (best.editor && version && bestVersion && *version <= *bestVersion) continue;
+            best = {&repo, &editor, true};
+            bestVersion = version;
+        }
+    }
+    return best;
 }
 
 std::vector<EditorUpdate> RepoCatalog::findUpdates(const std::vector<InstalledEditor>& installed) const {

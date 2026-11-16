@@ -12,6 +12,9 @@ namespace {
 
 constexpr const char* kSaveDevice = "stsave";
 constexpr const char* kExtDataDevice = "stext";
+constexpr const char* kTwlDevice = "sttwl";
+constexpr std::uint32_t kDsiWareHigh = 0x00048004;
+constexpr std::size_t kBannerSize = 0x23C0;
 constexpr std::uint32_t kApplicationHigh = 0x00040000;
 constexpr std::uint32_t kUpdateHigh = 0x0004000E;
 constexpr std::uint32_t kAddOnHigh = 0x0004008C;
@@ -33,6 +36,17 @@ FS_Path saveArchivePath(std::uint64_t id, std::uint8_t mediaType, std::array<std
 FS_Path extDataPath(std::uint64_t id, std::array<std::uint32_t, 3>& storage) {
     storage = {MEDIATYPE_SD, static_cast<std::uint32_t>(id) >> 8, 0};
     return {PATH_BINARY, sizeof(storage), storage.data()};
+}
+
+// The TWL NAND keeps a DSiWare save in its title folder; the folder uses the 00030004 category.
+std::string dsiWareFolder(std::uint64_t id) {
+    return std::format("/title/{:08x}/{:08x}/data", 0x00030004u, static_cast<std::uint32_t>(id));
+}
+
+Bytes readBanner(FS_MediaType mediaType, std::uint64_t id) {
+    Bytes banner(kBannerSize);
+    if (R_FAILED(FSUSER_GetLegacyBannerData(mediaType, id, banner.data()))) return {};
+    return banner;
 }
 
 Bytes readSmdh(std::uint64_t id, std::uint8_t mediaType) {
@@ -60,10 +74,53 @@ public:
     ~CtrSaveMount() override { archiveUnmount(kSaveDevice); }
 };
 
-class ExtDataMount : public DirectorySaveMount {
+// Extra data files and DSiWare saves have a fixed size: they cannot be truncated or grown, only rewritten in
+// place or recreated. `folder` is where the save sits inside the archive ("" for its root).
+class FixedFileMount : public DirectorySaveMount {
 public:
-    ExtDataMount() : DirectorySaveMount(std::string(kExtDataDevice) + ":/") {}
-    ~ExtDataMount() override { archiveUnmount(kExtDataDevice); }
+    FixedFileMount(FS_Archive archive, std::string device, std::string folder = "")
+        : DirectorySaveMount(device + ":" + folder + "/"), archive_(archive), device_(std::move(device)), folder_(std::move(folder)) {}
+    ~FixedFileMount() override {
+        FSUSER_CloseArchive(archive_);
+        archiveUnmount(device_.c_str());
+    }
+
+    void write(const std::string& path, ByteView data) override {
+        const std::string fsPath = folder_ + "/" + path;
+        const FS_Path target = fsMakePath(PATH_ASCII, fsPath.c_str());
+        std::uint64_t size = 0;
+        bool exists = false;
+        for (const auto& entry : listFiles())
+            if (entry.path == path) exists = true, size = entry.size;
+        if (exists && size != data.size()) {
+            if (const Result rc = FSUSER_DeleteFile(archive_, target); R_FAILED(rc))
+                throw std::runtime_error(std::format("cannot replace {} (0x{:08X})", path, static_cast<std::uint32_t>(rc)));
+            exists = false;
+        }
+        if (!exists) {
+            if (const Result rc = FSUSER_CreateFile(archive_, target, 0, data.size()); R_FAILED(rc))
+                throw std::runtime_error(std::format("cannot create {} (0x{:08X})", path, static_cast<std::uint32_t>(rc)));
+        }
+        Handle file = 0;
+        if (const Result rc = FSUSER_OpenFile(&file, archive_, target, FS_OPEN_WRITE, 0); R_FAILED(rc))
+            throw std::runtime_error(std::format("cannot open {} (0x{:08X})", path, static_cast<std::uint32_t>(rc)));
+        u32 written = 0;
+        const Result rc = data.empty() ? 0 : FSFILE_Write(file, &written, 0, data.data(), static_cast<u32>(data.size()), FS_WRITE_FLUSH);
+        FSFILE_Close(file);
+        if (R_FAILED(rc) || written != data.size())
+            throw std::runtime_error(std::format("cannot write {} (0x{:08X})", path, static_cast<std::uint32_t>(rc)));
+    }
+
+    void remove(const std::string& path) override {
+        const std::string fsPath = folder_ + "/" + path;
+        if (const Result rc = FSUSER_DeleteFile(archive_, fsMakePath(PATH_ASCII, fsPath.c_str())); R_FAILED(rc))
+            throw std::runtime_error(std::format("cannot delete {} (0x{:08X})", path, static_cast<std::uint32_t>(rc)));
+    }
+
+private:
+    FS_Archive archive_;
+    std::string device_;
+    std::string folder_;
 };
 
 class DsCardMount : public SaveMount {
@@ -86,6 +143,7 @@ public:
     }
 
     void remove(const std::string&) override { throw std::runtime_error("cannot remove the cartridge save"); }
+    bool singleFile() const override { return true; }
 
     void commit() override {
         if (!pending_) return;
@@ -128,7 +186,7 @@ std::vector<CtrPlatform::InstalledTitle> CtrPlatform::scan() {
     if (!amReady_) return titles;
     std::map<std::uint32_t, std::uint16_t> updates;
     std::map<std::uint32_t, std::vector<std::string>> addOns;
-    for (const auto mediaType : {MEDIATYPE_SD, MEDIATYPE_GAME_CARD}) {
+    for (const auto mediaType : {MEDIATYPE_SD, MEDIATYPE_GAME_CARD, MEDIATYPE_NAND}) {
         u32 count = 0;
         if (R_FAILED(AM_GetTitleCount(mediaType, &count)) || count == 0) continue;
         std::vector<u64> ids(count);
@@ -141,7 +199,12 @@ std::vector<CtrPlatform::InstalledTitle> CtrPlatform::scan() {
             const auto high = static_cast<std::uint32_t>(ids[i] >> 32);
             const auto low = static_cast<std::uint32_t>(ids[i]);
             const std::uint16_t version = haveInfo ? infos[i].version : std::uint16_t{0};
-            if (high == kApplicationHigh) titles.push_back({ids[i], static_cast<std::uint8_t>(mediaType), version, {}, {}});
+            if (mediaType == MEDIATYPE_NAND) {
+                // The NAND also holds system titles; only DSiWare has a save to edit there.
+                if (high == kDsiWareHigh) titles.push_back({ids[i], static_cast<std::uint8_t>(mediaType), version, {}, {}, true});
+            } else if (high == kApplicationHigh) {
+                titles.push_back({ids[i], static_cast<std::uint8_t>(mediaType), version, {}, {}});
+            }
             else if (high == kUpdateHigh) updates[low] = version;
             else if (high == kAddOnHigh) addOns[low].push_back(formatTitleId(ids[i]));
         }
@@ -173,12 +236,14 @@ std::vector<TitleInfo> CtrPlatform::titles() {
     std::vector<TitleInfo> result;
     for (const auto& title : scan()) {
         TitleInfo info;
-        info.platform = "3ds";
+        info.platform = title.dsiWare ? "nds" : "3ds";
         info.titleId = formatTitleId(title.id);
         info.version = title.updateVersion.value_or(title.version);
         info.displayVersion = formatVersion(static_cast<std::uint16_t>(info.version));
         info.addOns = title.addOns;
-        if (auto smdh = parseSmdh(readSmdh(title.id, title.mediaType), language)) {
+        auto details = title.dsiWare ? parseDsBanner(readBanner(MEDIATYPE_NAND, title.id), language)
+                                     : parseSmdh(readSmdh(title.id, title.mediaType), language);
+        if (auto& smdh = details) {
             info.name = std::move(smdh->shortTitle);
             info.publisher = std::move(smdh->publisher);
             info.icon = std::move(smdh->iconTga);
@@ -192,6 +257,10 @@ std::vector<TitleInfo> CtrPlatform::titles() {
         card.titleId = dsTitleId(dsCard_->gameCode);
         card.name = dsCard_->title.empty() ? dsCard_->gameCode : dsCard_->title;
         card.publisher = "DS cartridge " + dsCard_->gameCode;
+        if (auto banner = parseDsBanner(readBanner(MEDIATYPE_GAME_CARD, 0), language)) {
+            card.name = std::move(banner->shortTitle);
+            card.icon = std::move(banner->iconTga);
+        }
         result.push_back(std::move(card));
     }
     return result;
@@ -199,9 +268,20 @@ std::vector<TitleInfo> CtrPlatform::titles() {
 
 std::vector<SaveInfo> CtrPlatform::saves() {
     std::vector<SaveInfo> result;
+    FS_Archive twl = 0;
+    const bool haveTwl = R_SUCCEEDED(FSUSER_OpenArchive(&twl, ARCHIVE_NAND_TWL_FS, fsMakePath(PATH_EMPTY, "")));
     for (const auto& title : scan()) {
         std::array<std::uint32_t, 3> storage{};
         FS_Archive archive = 0;
+        if (title.dsiWare) {
+            Handle folder = 0;
+            const std::string path = dsiWareFolder(title.id);
+            if (haveTwl && R_SUCCEEDED(FSUSER_OpenDirectory(&folder, twl, fsMakePath(PATH_ASCII, path.c_str())))) {
+                FSDIR_Close(folder);
+                result.push_back({formatTitleId(title.id), SaveKind::Device});
+            }
+            continue;
+        }
         if (R_SUCCEEDED(FSUSER_OpenArchive(&archive, ARCHIVE_USER_SAVEDATA, saveArchivePath(title.id, title.mediaType, storage)))) {
             FSUSER_CloseArchive(archive);
             result.push_back({formatTitleId(title.id), SaveKind::Device});
@@ -211,6 +291,7 @@ std::vector<SaveInfo> CtrPlatform::saves() {
             result.push_back({formatTitleId(title.id), SaveKind::ExtData});
         }
     }
+    if (haveTwl) FSUSER_CloseArchive(twl);
     if (dsCard_) result.push_back({dsTitleId(dsCard_->gameCode), SaveKind::DsCard, {}, dsCard_->size});
     return result;
 }
@@ -223,11 +304,29 @@ std::expected<std::unique_ptr<SaveMount>, std::string> CtrPlatform::mount(const 
     const auto* title = find(save.titleId);
     if (!title) return std::unexpected("title is not installed");
     std::array<std::uint32_t, 3> storage{};
+    if (title->dsiWare) {
+        // public.sav and private.sav are FAT images of a fixed size; they are rewritten in place, with no commit.
+        archiveUnmount(kTwlDevice);
+        const FS_Path empty = fsMakePath(PATH_EMPTY, "");
+        if (const Result rc = archiveMount(ARCHIVE_NAND_TWL_FS, empty, kTwlDevice); R_FAILED(rc))
+            return std::unexpected(std::format("cannot open the DSiWare save (0x{:08X})", static_cast<std::uint32_t>(rc)));
+        FS_Archive archive = 0;
+        if (const Result rc = FSUSER_OpenArchive(&archive, ARCHIVE_NAND_TWL_FS, empty); R_FAILED(rc)) {
+            archiveUnmount(kTwlDevice);
+            return std::unexpected(std::format("cannot open the DSiWare save (0x{:08X})", static_cast<std::uint32_t>(rc)));
+        }
+        return std::make_unique<FixedFileMount>(archive, kTwlDevice, dsiWareFolder(title->id));
+    }
     if (save.kind == SaveKind::ExtData) {
         archiveUnmount(kExtDataDevice);
         if (const Result rc = archiveMount(ARCHIVE_EXTDATA, extDataPath(title->id, storage), kExtDataDevice); R_FAILED(rc))
             return std::unexpected(std::format("cannot open extra data (0x{:08X})", static_cast<std::uint32_t>(rc)));
-        return std::make_unique<ExtDataMount>();
+        FS_Archive archive = 0;
+        if (const Result rc = FSUSER_OpenArchive(&archive, ARCHIVE_EXTDATA, extDataPath(title->id, storage)); R_FAILED(rc)) {
+            archiveUnmount(kExtDataDevice);
+            return std::unexpected(std::format("cannot open extra data (0x{:08X})", static_cast<std::uint32_t>(rc)));
+        }
+        return std::make_unique<FixedFileMount>(archive, kExtDataDevice);
     }
     archiveUnmount(kSaveDevice);
     if (const Result rc = archiveMount(ARCHIVE_USER_SAVEDATA, saveArchivePath(title->id, title->mediaType, storage), kSaveDevice);
@@ -236,15 +335,33 @@ std::expected<std::unique_ptr<SaveMount>, std::string> CtrPlatform::mount(const 
     return std::make_unique<CtrSaveMount>();
 }
 
+// Games store a secure value with their save to refuse older copies. A restored backup is an older copy,
+// so the value is cleared, as Checkpoint and JKSM do; the game writes a new one on its next save.
+void CtrPlatform::afterRestore(const SaveInfo& save) {
+    if (save.kind != SaveKind::Device) return;
+    const auto* title = find(save.titleId);
+    if (!title || title->mediaType != MEDIATYPE_SD || title->dsiWare) return;
+    const auto low = static_cast<std::uint32_t>(title->id);
+    std::uint64_t value = (static_cast<std::uint64_t>(SECUREVALUE_SLOT_SD) << 32) | (((low >> 8) & 0xFFFFF) << 8) | (low & 0xFF);
+    u8 existed = 0;
+    FSUSER_ControlSecureSave(SECURESAVE_ACTION_DELETE, &value, sizeof(value), &existed, sizeof(existed));
+}
+
 std::expected<std::shared_ptr<GameData>, std::string> CtrPlatform::openGameData(const std::string& titleId) {
     const auto* title = find(titleId);
     if (!title) return std::unexpected("title is not installed");
+    if (title->dsiWare) return std::unexpected("DSiWare game files cannot be read");
     static int mounts = 0;
     const std::string device = "stgame" + std::to_string(mounts++ % 8);
     romfsUnmount(device.c_str());
-    if (const Result rc = romfsMountFromTitle(title->id, static_cast<FS_MediaType>(title->mediaType), device.c_str()); R_FAILED(rc))
-        return std::unexpected(std::format("cannot open the game files (0x{:08X})", static_cast<std::uint32_t>(rc)));
-    return std::make_shared<RomfsGameData>(device);
+    const std::vector<std::filesystem::path> mods{std::format("sdmc:/luma/titles/{}/romfs", titleId)};
+    if (const Result rc = romfsMountFromTitle(title->id, static_cast<FS_MediaType>(title->mediaType), device.c_str()); R_FAILED(rc)) {
+        const auto reason = std::format("cannot open the game files (0x{:08X})", static_cast<std::uint32_t>(rc));
+        auto modded = withModFolders(std::make_shared<UnavailableGameData>(reason), mods);
+        if (std::dynamic_pointer_cast<UnavailableGameData>(modded)) return std::unexpected(reason);
+        return modded;
+    }
+    return withModFolders(std::make_shared<RomfsGameData>(device), mods);
 }
 
 }

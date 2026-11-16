@@ -21,6 +21,7 @@ add_executable(savetinker_tests
     test_network.cpp
     test_pc_platform.cpp
     test_repository.cpp
+    test_review.cpp
     test_script_host.cpp
     test_smdh.cpp
     test_version.cpp

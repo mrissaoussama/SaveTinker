@@ -42,7 +42,7 @@ std::vector<TitleInfo> PcPlatform::titles() {
     for (const auto& item : readJsonFile(root_ / "titles.json")) {
         if (!item.is_object()) continue;
         TitleInfo title;
-        title.platform = gamePlatform_;
+        title.platform = item.value("platform", gamePlatform_);
         title.titleId = normalizeTitleId(item.value("title_id", ""));
         title.name = item.value("name", "");
         title.publisher = item.value("publisher", "");

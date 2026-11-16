@@ -15,6 +15,7 @@ set(APP_SOURCES
     ${CMAKE_CURRENT_BINARY_DIR}/lang_data.hpp
     save_flow.cpp
     screens_editor.cpp
+    screens_files.cpp
     screens_game.cpp
     screens_creator.cpp
     screens_hex.cpp
@@ -61,11 +62,11 @@ else()
         target_compile_definitions(SaveTinker PRIVATE IMGUI_IMPL_OPENGL_ES3)
         target_link_libraries(SaveTinker PRIVATE PkgConfig::SDL2 PkgConfig::GLES)
     else()
-        add_executable(SaveTinker ${APP_SOURCES} ${SDL_SOURCES} system_pc.cpp)
+        add_executable(SaveTinker ${APP_SOURCES} ${SDL_SOURCES} system_pc.cpp native_dialog.cpp)
         target_compile_definitions(SaveTinker PRIVATE SAVETINKER_EXAMPLES_DIR="${PROJECT_SOURCE_DIR}/examples")
         target_link_libraries(SaveTinker PRIVATE PkgConfig::SDL2)
         if(WIN32)
-            target_link_libraries(SaveTinker PRIVATE opengl32)
+            target_link_libraries(SaveTinker PRIVATE opengl32 ole32 shell32 uuid)
         else()
             find_package(OpenGL REQUIRED)
             target_link_libraries(SaveTinker PRIVATE OpenGL::GL)

@@ -4,13 +4,17 @@ A save editor that runs on the Switch, the 3DS and PC. It knows no game by itsel
 small Lua editor, installed from a repository the way you would add a source to a homebrew store.
 
 - Lists the games and saves on the console, backs a save up before the first write and writes it back safely.
-- Editors lay out the screen: numbers, switches, lists, item tables, pictures. Undo, redo, search, and a hex
-  editor for whatever no editor covers yet.
-- Some editors go by save format instead of by game: Unreal Engine (UE4 and UE5), RPG Maker MV/MZ, and JSON
-  saves from Unity and other engines.
-- GBA and DS save files next to their ROMs show up as games.
-- On PC, any save file or folder can be added from Settings or dropped on the window, then linked to a game so
-  its editors open it.
+  Backups can be restored, exported to a folder, and a save can be imported from any folder.
+- On 3DS: game saves, extra data, DSiWare saves and DS cartridges.
+- Editors lay out the screen: numbers, switches, lists, item tables, pictures. Undo, redo, search, a list of
+  every changed value before writing, reset to the loaded value (Y), and a hex editor for whatever no editor
+  covers yet.
+- Some editors go by save format instead of by game: Unreal Engine (plain or compressed), RPG Maker MV/MZ, JSON,
+  Easy Save 3, INI and GameMaker ds_map, MessagePack, protobuf, .NET BinaryFormatter, Python pickle and Ren'Py,
+  and Godot.
+- Any save file or folder can be added from Settings with the file browser (on PC the system's own dialog, or
+  drop it on the window), then linked to a game. GBA and DS saves find their ROM next to them or one folder up and link themselves.
+- Errors and editor output go to `logs/savetinker.log` in the data folder.
 - An editor can be started on the console by marking values in the hex editor, and finished on PC with
   `savetinker-cli`.
 
@@ -27,12 +31,12 @@ from [savetinker-editor-template](https://github.com/mrissaoussama/savetinker-ed
 | `scripts/build.sh 3ds` | devkitPro: `3ds-dev` | `build/3ds/app/SaveTinker.3dsx` |
 
 The desktop build runs against a folder laid out like a console: `SaveTinker --demo` creates one from `examples/`,
-`SaveTinker --console <folder>` uses an existing one.
+`SaveTinker --console <folder>` uses an existing one. `--no-native-dialogs` keeps the built-in file browser.
 
 ## Translations
 
-`app/lang/<code>.json` maps English text to the translation. `scripts/update_translations.py` adds new strings.
-A `<code>.json` in the data folder's `lang/` overrides the built-in one.
+The app is in English and French (`app/lang/fr.json`, English text to translation). `scripts/update_translations.py`
+adds new strings. A `<code>.json` in the data folder's `lang/` overrides the built-in one or adds a language.
 
 ## Command line tool
 
@@ -62,20 +66,28 @@ An editor is a folder with `manifest.json` and Lua files.
   "api_version": 1,
   "source": "https://github.com/...",
   "icon": "icon.png",
+  "dependencies": ["author.shared-lib", {"id": "community.json-tree", "version": ">=1.0.0"}],
   "games": [
-    {"platform": "switch", "title_id": "0100ABCD00000000", "versions": [">=1.0.0"]},
+    {"platform": "switch", "title_id": "0100ABCD00000000", "versions": [">=1.0.0"], "save_versions": ["3", "4"]},
     {"platform": "3ds", "title_id": "0004000000123400"}
   ]
 }
 ```
 
 - `versions`: `*`, `1.2.0`, `>=`, `>`, `<=`, `<` or `1.0.0 - 1.2.0`. Other versions open after a warning.
+- `save_versions`: the same patterns, matched against what the editor's `save_version(save)` returns.
+- `platform`: `switch`, `switch2`, `3ds`, `nds`, `gba`, `pc` or `*`. The Switch 2 build reports `switch2`;
+  editors for `switch` open there too, since a Switch 2 plays Switch games.
 - `title_id: "*"`: generic editor for every game on the platform (`platform: "*"` for every console), listed
   separately. Its `detect` decides whether a save fits.
 - `platform: "nds"` / `"gba"`: title id is `00000000` + the game code as hex (`BPEE` is `0000000042504545`).
 - `api_version`: raised only when a change breaks existing scripts. Older numbers keep working; newer ones are
   refused and marked in repositories. `st.api_version` is the app's number.
-- `icon`: PNG or JPEG, 64 KB at most. `game_data`: read access to the game's files.
+- `icon`: PNG or JPEG, 64 KB at most. `game_data`: read access to the game's files; LayeredFS mods
+  (`atmosphere/contents/<id>/romfs`, `luma/titles/<id>/romfs`) are read in place of the game's own files.
+- `dependencies`: libraries (or other editors) whose Lua modules `require` can load. Installing the editor offers
+  to install them from the user's repositories.
+- `full_memory`: on Switch in album mode, the editor screen offers to relaunch from a game with full memory.
 - Any other file in the folder (JSON tables, pictures, binary data) ships with the editor; read it with
   `st.data(path)`.
 
@@ -93,6 +105,7 @@ The user adds the save in Settings and picks the game from the list of games tha
 - `detect(save)`: true, or `false, "reason"`
 - `build(ui, save)`: the screen, run again after every change
 - `before_save(save)`: fix checksums and sizes
+- `save_version(save)`: optional, the save format version as text, checked against `save_versions`
 
 ```lua
 function build(ui, save)
@@ -157,6 +170,7 @@ Offsets start at 0. Endian is `"little"`/`"le"` or `"big"`/`"be"`. Binary data i
 | `file:bytes(offset, length)`, `file:setBytes(offset, data)`, `file:find(data[, from])` | Bytes |
 | `file:str`, `file:setStr(offset, length, text[, encoding])` | `utf8`, `utf16`, `utf16le`, `utf16be` |
 | `file:splice(offset, length, data)`, `file:content()`, `file:setContent(data)`, `file:size()` | Resizing |
+| `file:revision()` | Changes whenever the content does (edits, undo), for caching decoded data |
 | `st.transaction(label, fn)` | One undo step, rolled back on error |
 | `st.hash.crc32/crc16/adler32/murmur3/md5/sha1/sha256(data)`, `st.hash.hmac_sha256(key, data)` | Hashes |
 | `st.zlib`, `st.deflate`, `st.gzip`, `st.zstd`: `.compress(data[, level])`, `.decompress(data)` | Compression |
@@ -165,10 +179,13 @@ Offsets start at 0. Endian is `"little"`/`"le"` or `"big"`/`"be"`. Binary data i
 | `st.crypto.pbkdf2(hash, password, salt, iterations, length)` | `sha1` or `sha256` |
 | `st.format.sarc/byml/msbt(data)` | Nintendo archives and messages |
 | `st.hex`, `st.unhex`, `st.json.decode/encode`, `st.json.null` | |
-| `require(name)` | `name.lua` from the editor (`a.b` is `a/b.lua`), then the shared `_lib` folder |
+| `require(name)` | `name.lua` from the editor (`a.b` is `a/b.lua`), then its dependencies, then `_lib` |
+| `st.zip.read(data)`, `st.zip.write(entries)` | Zip archives as `{ {name =, data =}, ... }` |
 | `st.lzstring.compress_base64(text)`, `.decompress_base64(text)` | lz-string, as used by RPG Maker MV |
-| `require("st.gvas")` | Unreal saves: `parse(file)` gives a property tree, `bind(file, node)` edits a value |
-| `require("st.es3")` | Easy Save 3 (Unity): `decode(data[, password])`, `encode(text[, password, {gzip = true}])` |
+| `require("st.gvas")` | Unreal saves: `open(file)` handles zlib, gzip and chunked compression, `parse(file)` gives a property tree, `bind(file, node)` edits a value |
+| `require("st.es3")` | Easy Save 3 (Unity): `open(data[, password])` gives `{text, encrypted, gzip}`, `encode(text[, password, {gzip = true}])` |
+| `require("st.memfile")` | `view(file, unpack, pack)`: a file-like view of packed data; edits are packed back |
+| `require("st.cartridge")` | GBA/DS images: `size(file)` without an emulator footer (DeSmuME), `fits(file, sizes...)` |
 | `st.data(path)`, `st.labels(path)` | Editor files; `labels` tries `<dir>/<lang>/<file>` first |
 | `st.game_data.read(path[, optional])`, `st.game_data.list(dir)` | Game files, with `"game_data": true` |
 | `print(...)`, `st.warn(...)` | Editor log (- button) |
@@ -176,15 +193,25 @@ Offsets start at 0. Endian is `"little"`/`"le"` or `"big"`/`"be"`. Binary data i
 `string.pack`/`string.unpack` are available; `io`, `os`, `debug`, `load` and `package` are not. Scripts have
 memory and instruction limits and no network access.
 
+### Libraries
+
+A package with `"kind": "library"` holds Lua modules for other editors and needs no `games` or `main.lua`.
+[savetinker-editors](https://github.com/mrissaoussama/savetinker-editors) has `community.json-tree` (JSON kept
+byte for byte) and `community.save-formats` (`formats.ini`, `formats.gmmap`, `formats.msgpack`, `formats.protobuf`,
+`formats.nrbf`, `formats.pickle`, `formats.godot`, and `formats.treeview` / `formats.editor` to show any of them).
+
 ## Save files
 
-GBA and DS saves (`.sav`, `.srm`, `.sa1`, `.dsv`) in the folders set in Settings appear as games when a ROM with
-the same name sits next to them. Editors see them as `save.bin`.
+GBA and DS saves (`.sav`, `.srm`, `.sa1`, `.dsv`, `.fla`, `.eep`, `.sra`) in the folders set in Settings appear
+as games when a ROM with the same name sits next to them or one folder up (TWiLight Menu++ keeps saves in
+`saves/`). Editors see them as `save.bin`; `st.cartridge` handles emulator footers.
 
-Saves added on PC keep their file names. A folder opens with every file in it. Until it is linked to a game,
-an added save opens only with editors that take any game.
+Added saves keep their file names. A folder opens with every file in it. Until it is linked to a game, an added
+save opens only with editors that take any game.
 
-Backups are made before the first write, and writing stops if the SD card lacks room for them.
+Files are read when an editor first asks for them once a save is over 8 MB, and only edited files are written.
+Backups are made before the first write, and writing stops if the SD card lacks room for them. Restoring writes
+every file before removing extra ones; on 3DS it also clears the save's secure value so the game accepts it.
 
 ## Repositories
 
@@ -200,6 +227,7 @@ A repository is a `repo.json` anywhere on the web; `savetinker-cli pack` writes 
       "version": "1.0.0",
       "api_version": 1,
       "games": [{"platform": "switch", "title_id": "0100ABCD00000000"}],
+      "dependencies": ["author.shared-lib"],
       "download": "editors/game-name-1.0.0.zip",
       "sha256": "...",
       "size": 12345
@@ -208,4 +236,5 @@ A repository is a `repo.json` anywhere on the web; `savetinker-cli pack` writes 
 }
 ```
 
-Relative `download` links resolve against the `repo.json` URL.
+Relative `download` links resolve against the `repo.json` URL. Libraries are listed like editors, with
+`"kind": "library"` and no `games`.

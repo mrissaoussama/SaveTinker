@@ -7,6 +7,7 @@
 #include "i18n.hpp"
 #include "save_flow.hpp"
 #include "savetinker/checksum.hpp"
+#include "savetinker/file_saves.hpp"
 #include "savetinker/editor_session.hpp"
 #include "ui.hpp"
 
@@ -82,11 +83,21 @@ public:
     }
 
     void draw(App& app) override {
+        if (!error_.empty() && !errorLogged_) {
+            app.log(editor_.manifest.id, "could not open " + target_.save.titleId + ": " + error_);
+            flushLog(app);
+            errorLogged_ = true;
+        }
         if (!error_.empty()) {
             ui::emptyState(tr("This editor could not open the save"), error_);
             return;
         }
         if (!session_) return;
+        if (!saveVersionWarning_.empty()) ui::wrappedText(saveVersionWarning_, ui::color::Warning);
+        if (editor_.manifest.fullMemory && app.system().limitedMemory()) {
+            const auto relaunch = ui::row("##fullmemory", tr("This editor needs full memory. Relaunch from the game..."), "", ui::color::Warning);
+            if (relaunch.activated) offerFullMemory(app);
+        }
         if (detectWarning_) {
             ui::wrappedText(detectReason_.empty() ? tr("This save does not look like what the editor expects. Changes may damage it.")
                                                   : detectReason_,
@@ -150,7 +161,7 @@ public:
         const auto& crumbs = session_->breadcrumbs();
         if (crumbs.size() > 1) {
             std::string path;
-            for (const auto& crumb : crumbs) path += (path.empty() ? "" : "  \xE2\x80\xBA  ") + crumb.title;
+            for (const auto& crumb : crumbs) path += (path.empty() ? "" : std::string("  ") + ui::glyph("\xE2\x80\xBA", ">") + "  ") + crumb.title;
             ui::dimText(path);
         }
         if (previewed_) {
@@ -179,7 +190,7 @@ public:
         ImGui::EndChild();
 
         drawStatusLine(app);
-        if (reviewing_ && !drawReviewChanges(app, *document_, [this, &app] { write(app); })) reviewing_ = false;
+        if (reviewing_ && !drawReviewChanges(app, *document_, [this, &app] { write(app); }, reviewFields_)) reviewing_ = false;
         drawLog(app);
 
         if (pending_) {
@@ -206,9 +217,16 @@ private:
         context.saveKind = std::string(st::saveKindName(target_.save.kind));
         context.editor = editor_.manifest;
         context.language = app.language();
+        if (const auto missing = app.editors().missingDependencies(editor_.manifest); !missing.empty()) {
+            error_ = tr("This editor needs libraries that are not installed:");
+            for (const auto& dependency : missing) error_ += "\n  " + dependency.id + (dependency.version == "*" ? "" : "  " + dependency.version);
+            error_ += tr("\nInstall the editor again from its repository to get them.");
+            return;
+        }
         try {
-            host_ = std::make_unique<st::ScriptHost>(*document_, context,
-                                                     st::directoryModuleLoader(editor_.directory, app.editors().libraryDir()));
+            host_ = std::make_unique<st::ScriptHost>(
+                *document_, context,
+                st::packageModuleLoader(editor_.directory, app.editors().dependencyFolders(editor_.manifest), app.editors().libraryDir()));
         } catch (const std::exception& failure) {
             error_ = failure.what();
             return;
@@ -228,6 +246,18 @@ private:
         }
         detectWarning_ = !*detected;
         detectReason_ = host_->detectReason();
+        if (const auto* game = editor_.manifest.findGame(context.platform, context.titleId); game && !game->saveVersions.empty()) {
+            auto version = host_->saveVersion();
+            if (!version) {
+                error_ = version.error();
+                return;
+            }
+            if (*version && !game->supportsSaveVersion(**version)) {
+                std::string supported;
+                for (const auto& pattern : game->saveVersions) supported += (supported.empty() ? "" : ", ") + pattern;
+                saveVersionWarning_ = trf("This save is format {} and the editor was made for {}. It may misread it.", **version, supported);
+            }
+        }
         session_ = std::make_unique<st::EditorSession>(*host_);
         if (auto built = session_->rebuild(); !built) {
             error_ = built.error();
@@ -236,6 +266,16 @@ private:
         }
         if (session_->topLevelLinks().empty()) pageChanged_ = true;
         else focusSidebar_ = true;
+    }
+
+    void offerFullMemory(App& app) {
+        const auto titleId = target_.save.titleId;
+        app.confirm(tr("Relaunch with full memory"),
+                    tr("Hold R, pick Start and keep R held until the homebrew menu opens in place of the game. Start SaveTinker from there."),
+                    tr("Start"), [titleId](App& app) {
+                        if (auto failed = app.system().relaunchWithFullMemory(titleId)) return app.showMessage(tr("Cannot relaunch"), *failed);
+                        app.quit();
+                    });
     }
 
     float sidebarWidth(const std::vector<UiNode>& links) const {
@@ -253,7 +293,10 @@ private:
     void handleShortcuts(App& app) {
         if (ui::pressed(ui::Button::ZL, true)) report(app, session_->undo(), true);
         if (ui::pressed(ui::Button::ZR, true)) report(app, session_->redo(), true);
-        if (ui::pressed(ui::Button::Plus)) reviewing_ = true;
+        if (ui::pressed(ui::Button::Plus)) {
+            reviewing_ = true;
+            reviewFields_ = session_->fieldChanges();
+        }
         if (ui::pressed(ui::Button::Minus)) showLog_ = true;
         if (ui::pressed(ui::Button::X))
             app.promptText({tr("Search this page"), search_, TextKind::Text, 64}, [this](App&, std::string text) {
@@ -278,6 +321,8 @@ private:
     }
 
     void report(App& app, const std::expected<void, std::string>& result, bool quiet = false) {
+        if (!result) app.log(editor_.manifest.id, "error: " + result.error());
+        flushLog(app);
         if (!result && !quiet) app.showMessage(tr("Editor error"), result.error());
         else if (!result) app.toast(result.error(), true);
     }
@@ -314,11 +359,24 @@ private:
         if (result.id) lastFieldFocus_[session_->currentPage().id] = result.id;
         fieldsFocused_ = true;
         focusedHelp_ = node.help;
-        focusedHasActions_ = !node.actions.empty();
+        if ((node.kind == WidgetKind::Integer || node.kind == WidgetKind::Float) && node.editable() && (node.min || node.max)) {
+            const std::string range = trf("Range {} to {}", node.min ? formatBound(node, *node.min) : "-",
+                                          node.max ? formatBound(node, *node.max) : "-");
+            focusedHelp_ = focusedHelp_.empty() ? range : focusedHelp_ + "  \xC2\xB7  " + range;
+        }
+        focusedHasActions_ = !node.actions.empty() || node.editable();
         if (focusedHasActions_ && ui::pressed(ui::Button::Y)) {
             actionNode_ = node;
             ImGui::OpenPopup("##actions");
         }
+    }
+
+    static std::string formatBound(const UiNode& node, double bound) {
+        if (node.kind == WidgetKind::Integer) {
+            const auto integer = static_cast<std::int64_t>(bound);
+            return node.hex ? std::format("0x{:X}", integer) : std::to_string(integer);
+        }
+        return std::format("{:.6g}", bound);
     }
 
     std::string actionChips(const UiNode& node) {
@@ -336,7 +394,7 @@ private:
         case WidgetKind::Float: {
             const bool editable = node.editable();
             const auto result = ui::row("##n", label, editable ? ui::stepper(formatNumber(node)) : formatNumber(node),
-                                        editable ? ui::color::Text : ui::color::TextDim);
+                                        session_->changed(node) ? ui::color::Modified : editable ? ui::color::Text : ui::color::TextDim);
             trackFocus(node, result);
             if (!editable) break;
             if (const int step = ui::horizontalInput(result.id, result.focused)) {
@@ -365,7 +423,8 @@ private:
         }
         case WidgetKind::Text: {
             const auto text = st::uiValueToString(node.value);
-            const auto result = ui::row("##t", label, text.empty() ? "(empty)" : text);
+            const auto result = ui::row("##t", label, text.empty() ? "(empty)" : text,
+                                        session_->changed(node) ? ui::color::Modified : ui::color::TextDim);
             trackFocus(node, result);
             if (result.activated && !node.editable()) app.toast(tr("This value is shown for information and cannot be changed"));
             if (result.activated && node.editable())
@@ -383,7 +442,8 @@ private:
         case WidgetKind::Choice: {
             const auto selected = node.selectedOption();
             const std::string value = selected ? node.options[*selected].label : trf("Unknown ({})", st::uiValueToString(node.value));
-            const auto result = ui::row("##c", label, value + "  " + ui::dropMark(), selected ? ui::color::Text : ui::color::Warning);
+            const auto result = ui::row("##c", label, value + "  " + ui::dropMark(),
+                                        session_->changed(node) ? ui::color::Modified : selected ? ui::color::Text : ui::color::Warning);
             trackFocus(node, result);
             if (result.activated && node.editable()) {
                 choiceNode_ = node;
@@ -396,7 +456,8 @@ private:
         case WidgetKind::Flags: {
             std::size_t count = 0;
             for (std::size_t i = 0; i < node.options.size(); ++i) count += node.flagSet(i);
-            const auto result = ui::row("##f", label, std::format("{} of {}  {}", count, node.options.size(), ui::dropMark()));
+            const auto result = ui::row("##f", label, std::format("{} of {}  {}", count, node.options.size(), ui::dropMark()),
+                                        session_->changed(node) ? ui::color::Modified : ui::color::TextDim);
             trackFocus(node, result);
             if (result.activated && node.editable()) {
                 choiceNode_ = node;
@@ -407,7 +468,7 @@ private:
         case WidgetKind::Button: {
             const auto result = ui::row("##b", label, "", ui::color::Accent);
             ImGui::GetWindowDrawList()->AddText(ImVec2(start.x + width - ImGui::GetFontSize() * 1.5f, start.y + (ui::rowHeight() - ImGui::GetFontSize()) * 0.5f),
-                                                ui::color::Accent, "\xE2\x96\xB6");
+                                                ui::color::Accent, ui::glyph("\xE2\x96\xB6", ">"));
             trackFocus(node, result);
             if (result.activated) pending_ = [this, &app, node] { report(app, session_->press(node)); };
             break;
@@ -436,7 +497,7 @@ private:
             break;
         }
         case WidgetKind::PageLink: {
-            const auto result = ui::row("##p", label, "\xE2\x80\xBA", ui::color::Text);
+            const auto result = ui::row("##p", label, ui::glyph("\xE2\x80\xBA", ">"), ui::color::Text);
             trackFocus(node, result);
             if (result.activated) {
                 const auto id = node.pageId;
@@ -464,7 +525,7 @@ private:
             break;
         }
         case WidgetKind::Popup: {
-            const auto result = ui::row("##o", label, "\xE2\x80\xA6");
+            const auto result = ui::row("##o", label, ui::glyph("\xE2\x80\xA6", "..."));
             trackFocus(node, result);
             if (result.activated) ImGui::OpenPopup("##nodepopup");
             ImGui::SetNextWindowPos(ImGui::GetIO().DisplaySize * 0.5f, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -481,7 +542,7 @@ private:
         }
         }
 
-        if (!node.actions.empty() && actionNode_ && actionNode_->id == node.id) drawActionsPopup(app);
+        if (actionNode_ && actionNode_->id == node.id) drawActionsPopup(app);
         if (choiceNode_ && choiceNode_->id == node.id) {
             drawChoicePopup(app);
             drawFlagsPopup(app);
@@ -588,6 +649,12 @@ private:
             }
             ImGui::PopID();
         }
+        if (node.editable()) {
+            if (ui::row("##reset", tr("Reset to the value at load"), session_->changed(node) ? tr("changed") : "", ui::color::Modified).activated) {
+                pending_ = [this, &app, node] { report(app, session_->reset(node)); };
+                ImGui::CloseCurrentPopup();
+            }
+        }
         ImGui::EndPopup();
     }
 
@@ -604,17 +671,41 @@ private:
     }
 
     void drawStatusLine(App& app) {
-        if (!focusedHelp_.empty())
-            ImGui::GetForegroundDrawList()->AddText(app.footerTextPosition(), ui::color::TextDim, focusedHelp_.c_str());
+        if (!focusedHelp_.empty()) {
+            auto* draw = ImGui::GetForegroundDrawList();
+            const ImVec2 at = app.footerTextPosition();
+            if (ImGui::CalcTextSize(focusedHelp_.c_str()).x <= app.footerTextRoom()) {
+                draw->AddText(at, ui::color::TextDim, focusedHelp_.c_str());
+            } else {
+                // No room beside the hints (small screens): show it on its own line just above the footer.
+                const float line = ImGui::GetFontSize() * 1.4f;
+                const float top = at.y - line - ImGui::GetFontSize() * 0.4f;
+                const float width = ImGui::GetIO().DisplaySize.x - at.x * 2;
+                draw->AddRectFilled(ImVec2(at.x - 4, top), ImVec2(at.x + width + 4, top + line), IM_COL32(30, 33, 40, 240), 4);
+                ui::drawScrollingText(draw, focusedHelp_, ImVec2(at.x, top + (line - ImGui::GetFontSize()) * 0.5f), width, top, top + line,
+                                      ui::color::TextDim, true);
+            }
+        }
         if (document_ && document_->isDirty()) {
             auto* draw = ImGui::GetForegroundDrawList();
-            const char* text = trc("\xE2\x97\x8F Unsaved");
+            const std::string label = std::string(ui::glyph("\xE2\x97\x8F", "*")) + " " + tr("Unsaved");
+            const char* text = label.c_str();
             const float width = ImGui::CalcTextSize(text).x;
             draw->AddText(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f - width * 0.5f, ImGui::GetFontSize() * 0.5f), ui::color::Modified, text);
         }
     }
 
-    void drawLog(App&) {
+    void flushLog(App& app) {
+        if (!host_) return;
+        const auto& entries = host_->log();
+        for (; loggedEntries_ < entries.size(); ++loggedEntries_) {
+            const auto& entry = entries[loggedEntries_];
+            app.log(editor_.manifest.id, (entry.level == st::LogEntry::Level::Warning ? "warning: " : "") + entry.message);
+        }
+    }
+
+    void drawLog(App& app) {
+        flushLog(app);
         if (showLog_) {
             ImGui::OpenPopup("##log");
             showLog_ = false;
@@ -623,6 +714,7 @@ private:
         ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x * 0.7f, ImGui::GetIO().DisplaySize.y * 0.6f));
         if (!ImGui::BeginPopup("##log")) return;
         ui::sectionTitle(tr("Editor log"));
+        ui::dimText(trf("Also written to {}", st::pathToUtf8(app.logPath())));
         if (host_->log().empty()) ui::dimText(tr("The editor has not printed anything."));
         for (const auto& entry : host_->log())
             ui::wrappedText(entry.message, entry.level == st::LogEntry::Level::Warning ? ui::color::Warning : ui::color::Text);
@@ -654,7 +746,11 @@ private:
     std::string error_;
     bool detectWarning_ = false;
     std::string detectReason_;
+    std::string saveVersionWarning_;
+    std::size_t loggedEntries_ = 0;
+    bool errorLogged_ = false;
     bool reviewing_ = false;
+    std::vector<st::FieldChange> reviewFields_;
     bool showLog_ = false;
     bool pageChanged_ = false;
     bool previewed_ = false;

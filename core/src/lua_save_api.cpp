@@ -143,7 +143,14 @@ int fileSet(lua_State* L) {
 }
 
 int fileSize(lua_State* L) {
-    lua_pushinteger(L, static_cast<lua_Integer>(bufferOf(checkFile(L, 1)).size()));
+    auto& file = checkFile(L, 1);
+    lua_pushinteger(L, static_cast<lua_Integer>(file.document->fileSize(file.name)));
+    return 1;
+}
+
+int fileRevision(lua_State* L) {
+    auto& file = checkFile(L, 1);
+    lua_pushinteger(L, static_cast<lua_Integer>(file.document->revision(file.name)));
     return 1;
 }
 
@@ -420,6 +427,7 @@ void registerSaveTypes(lua_State* L) {
     static const luaL_Reg fileMethods[] = {
         {"size", guarded<fileSize>},
         {"name", guarded<fileName>},
+        {"revision", guarded<fileRevision>},
         {"endian", guarded<fileEndian>},
         {"u8", guarded<fileReadTyped<FieldKind::U8>>},
         {"u16", guarded<fileReadTyped<FieldKind::U16>>},

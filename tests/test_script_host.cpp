@@ -355,6 +355,17 @@ TEST_CASE("st.es3 round trips encrypted and compressed saves") {
         local wrong = select(2, es3.decode(sealed, "nope"))
         return tostring(es3.encrypted(sealed)) .. " " .. es3.decode(sealed, "password") .. " " .. es3.decode(text) .. " " .. tostring(wrong)
     )") == R"(true {"gold":{"__type":"int","value":5}} {"gold":{"__type":"int","value":5}} wrong password)");
+    // Gzip without encryption is not mistaken for encrypted data when its size is a multiple of 16.
+    CHECK(f.eval(R"(
+        local es3 = require("st.es3")
+        local text, packed = '{"a":1}', nil
+        repeat
+            text = text .. " "
+            packed = es3.encode(text, nil, { gzip = true })
+        until #packed >= 32 and #packed % 16 == 0
+        local info = assert(es3.open(packed))
+        return tostring(info.encrypted) .. " " .. tostring(info.gzip) .. " " .. tostring(info.text == text)
+    )") == "false true true");
     CHECK(f.eval("return st.hex(st.crypto.pbkdf2('sha1', 'password', 'salt', 2, 20))") == "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957");
     CHECK(f.eval("return #st.hash.hmac_sha1('k', 'd')") == "20");
 }

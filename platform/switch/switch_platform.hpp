@@ -11,7 +11,8 @@ public:
     SwitchPlatform();
     ~SwitchPlatform() override;
 
-    std::string gamePlatform() const override { return "switch"; }
+    // Switch 2 runs Switch games too; editors made for "switch" still match there (see GameTarget::matches).
+    std::string gamePlatform() const override;
     std::filesystem::path dataRoot() const override { return "sdmc:/switch/SaveTinker"; }
 
     std::vector<UserAccount> users() override;

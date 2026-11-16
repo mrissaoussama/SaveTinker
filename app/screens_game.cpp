@@ -4,6 +4,7 @@
 #include "app.hpp"
 #include "i18n.hpp"
 #include "save_flow.hpp"
+#include "savetinker/file_saves.hpp"
 #include "savetinker/manifest.hpp"
 #include "ui.hpp"
 
@@ -171,6 +172,7 @@ public:
     void draw(App& app) override {
         const auto records = app.backups().list(save_.titleId, save_.slotName());
         ui::dimText(app.saveLabel(save_) + "  \xC2\xB7  " + save_.titleId);
+        if (ui::row("##import", tr("Import a save from a folder..."), "", ui::color::Accent).activated) importSave(app);
         if (records.empty()) {
             ui::emptyState(tr("No backups yet"), tr("Backups are made automatically before SaveTinker writes a save."));
             return;
@@ -198,9 +200,22 @@ public:
                                 if (auto safety = app.backups().create(**mount, save, record.titleName, tr("before restore")); !safety)
                                     return app.showMessage(tr("Restore cancelled"), trf("Could not back up the current save: {}", safety.error()));
                                 auto restored = app.backups().restore(record, **mount);
+                                mount->reset();
+                                if (restored) app.platform().afterRestore(save);
                                 if (restored) app.toast(tr("Backup restored"));
                                 else app.showMessage(tr("Restore failed"), restored.error());
                             });
+            }
+            if (ui::row("##export", tr("Export to a folder...")).activated) {
+                ImGui::CloseCurrentPopup();
+                auto record = selected_;
+                pickPath(app, tr("Pick where to export"), FilePick::Folder, defaultBrowseFolder(),
+                                         [record](App& app, const std::filesystem::path& folder) {
+                                             const auto target = folder / (record.titleId + "-" + record.directory.filename().string());
+                                             auto exported = app.backups().exportTo(record, target);
+                                             if (exported) app.toast(trf("Exported to {}", st::pathToUtf8(target)));
+                                             else app.showMessage(tr("Export failed"), exported.error());
+                                         });
             }
             if (ui::row("##verify", tr("Check integrity")).activated) {
                 ImGui::CloseCurrentPopup();
@@ -221,6 +236,28 @@ public:
     }
 
 private:
+    void importSave(App& app) {
+        auto save = save_;
+        pickPath(app, tr("Pick the folder that holds the save files"), FilePick::Folder, defaultBrowseFolder(),
+                                 [save](App& app, const std::filesystem::path& folder) {
+            app.confirm(tr("Import this save?"),
+                        trf("The current save will be replaced by the files in {}. A backup of the current save is made first.", st::pathToUtf8(folder)),
+                        tr("Import"), [save, folder](App& app) {
+                            auto mount = app.platform().mount(save);
+                            if (!mount) return app.showMessage(tr("Cannot open the save"), mount.error());
+                            const auto* title = app.findTitle(save.titleId);
+                            if (auto safety = app.backups().create(**mount, save, title ? title->info.name : save.titleId, tr("before import")); !safety)
+                                return app.showMessage(tr("Import cancelled"), trf("Could not back up the current save: {}", safety.error()));
+                            auto imported = app.backups().importFolder(folder, **mount);
+                            mount->reset();
+                            if (!imported) return app.showMessage(tr("Import failed"), imported.error());
+                            app.platform().afterRestore(save);
+                            app.reloadTitles();
+                            app.toast(tr("Save imported"));
+                        });
+        });
+    }
+
     st::SaveInfo save_;
     st::BackupRecord selected_;
 };

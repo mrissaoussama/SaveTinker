@@ -44,13 +44,72 @@ const st::RepoEditorEntry* findRepoEditor(const st::RepoSource* repo, const std:
     return found == repo->index.editors.end() ? nullptr : &*found;
 }
 
+// A size or checksum that no longer matches usually means the repository was updated after it was last loaded.
+void downloadFailed(App& app, const std::string& error) {
+    if (error.find("mismatch") == std::string::npos) return app.showMessage(tr("Download failed"), error);
+    app.toast(tr("The repository changed since it was loaded. It was refreshed, try again."), true);
+    app.refreshRepos(false);
+}
+
+// Downloads and installs each listed dependency in turn, then the ones those need.
+void installDependencies(App& app, std::vector<st::Dependency> pending, std::vector<std::string> done = {}) {
+    while (!pending.empty() && std::ranges::find(done, pending.front().id) != done.end()) pending.erase(pending.begin());
+    if (pending.empty()) {
+        if (!done.empty()) {
+            std::string names;
+            for (const auto& id : done) names += (names.empty() ? "" : ", ") + id;
+            app.toast(trf("Installed {}", names));
+        }
+        return;
+    }
+    const auto dependency = pending.front();
+    pending.erase(pending.begin());
+    const auto match = app.catalog().findPackage(dependency.id, dependency.version);
+    if (!match.editor) {
+        app.showMessage(tr("Library not found"),
+                        trf("{} ({}) is not listed in any of your repositories. Add the repository that provides it, then install again.",
+                            dependency.id, dependency.version));
+        return;
+    }
+    const auto entry = *match.editor;
+    const auto repoUrl = match.repo->url;
+    app.runTask(trf("Downloading {}", entry.name), [&app, entry, repoUrl, pending, done](Progress& progress) -> std::function<void(App&)> {
+        auto bytes = app.repoManager().downloadEditor(entry, [&progress](std::uint64_t got, std::uint64_t total) {
+            progress.done = got;
+            progress.total = total;
+        });
+        if (!bytes) return [error = bytes.error()](App& app) { downloadFailed(app, error); };
+        auto package = st::openPackage(*bytes);
+        if (!package || package->manifest.id != entry.id)
+            return [](App& app) { app.showMessage(tr("This package is not valid"), tr("The package id does not match the repository listing.")); };
+        const auto hash = st::toHex(st::sha256(*bytes));
+        return [package = std::move(*package), repoUrl, hash, pending, done](App& app) mutable {
+            auto installed = app.editors().install(package, repoUrl, hash);
+            if (!installed) return app.showMessage(tr("Install failed"), installed.error());
+            done.push_back(package.manifest.id);
+            for (const auto& more : app.editors().missingDependencies(package.manifest)) pending.push_back(more);
+            installDependencies(app, std::move(pending), std::move(done));
+        };
+    });
+}
+
+void offerDependencies(App& app, const st::EditorManifest& manifest) {
+    auto missing = app.editors().missingDependencies(manifest);
+    if (missing.empty()) return;
+    std::string list;
+    for (const auto& dependency : missing)
+        list += "\n  " + dependency.id + (dependency.version == "*" ? "" : "  " + dependency.version);
+    app.confirm(tr("Install the libraries it needs?"), trf("{} needs:{}", manifest.name, list), tr("Install"),
+                [missing](App& app) { installDependencies(app, missing); });
+}
+
 void downloadAndInspect(App& app, const std::string& repoUrl, const st::RepoEditorEntry& entry) {
     app.runTask(trf("Downloading {}", entry.name), [&app, repoUrl, entry](Progress& progress) -> std::function<void(App&)> {
         auto bytes = app.repoManager().downloadEditor(entry, [&progress](std::uint64_t done, std::uint64_t total) {
             progress.done = done;
             progress.total = total;
         });
-        if (!bytes) return [error = bytes.error()](App& app) { app.showMessage(tr("Download failed"), error); };
+        if (!bytes) return [error = bytes.error()](App& app) { downloadFailed(app, error); };
         auto package = st::openPackage(*bytes);
         if (!package) return [error = package.error()](App& app) { app.showMessage(tr("This package is not valid"), error); };
         if (package->manifest.id != entry.id)
@@ -66,6 +125,7 @@ void downloadAndInspect(App& app, const std::string& repoUrl, const st::RepoEdit
                 if (!installed) return app.showMessage(tr("Install failed"), installed.error());
                 app.pop();
                 app.toast(copy.manifest.name + " installed");
+                offerDependencies(app, copy.manifest);
             }));
         };
     });
@@ -117,7 +177,12 @@ public:
         }
         if (ui::row("##remove", tr("Remove"), "", ui::color::Danger).activated) {
             const auto id = id_;
-            app.confirm(trf("Remove {}?", manifest.name), tr("Backups and saves are not affected."), tr("Remove"), [id](App& app) {
+            const auto users = app.editors().dependents(id);
+            std::string usedBy;
+            for (const auto& user : users) usedBy += "\n  " + user;
+            const std::string message = users.empty() ? tr("Backups and saves are not affected.")
+                                                      : trf("These editors need it and will stop working:{}", usedBy);
+            app.confirm(trf("Remove {}?", manifest.name), message, tr("Remove"), [id](App& app) {
                 if (auto removed = app.editors().remove(id); !removed) return app.showMessage(tr("Could not remove"), removed.error());
                 app.pop();
                 app.toast(tr("Editor removed"));
@@ -173,21 +238,23 @@ public:
         if (repo) {
             for (const auto& editor : repo->index.editors) {
                 const auto installed = app.editors().find(editor.id);
-                std::string state;
+                // Installed editors show a green dot; an arrow marks a newer version.
+                std::string state = "v" + editor.version;
+                ImU32 stateColor = ui::color::TextDim;
                 if (installed) {
                     const auto mine = st::Version::parse(installed->manifest.version);
                     const auto theirs = st::Version::parse(editor.version);
-                    state = mine && theirs && *theirs > *mine ? tr("Update") : tr("Installed");
-                } else {
-                    state = "v" + editor.version;
+                    const bool newer = mine && theirs && *theirs > *mine;
+                    state = newer ? std::string(ui::glyph("â", "^")) + " v" + editor.version
+                                  : std::string(ui::glyph("â", "*"));
+                    stateColor = newer ? ui::color::Accent : ui::color::Success;
                 }
                 std::string platforms;
                 for (const auto& game : editor.games)
                     if (platforms.find(st::platformDisplayName(game.platform)) == std::string::npos)
                         platforms += (platforms.empty() ? "" : ", ") + st::platformDisplayName(game.platform);
-                if (ui::row(editor.id.c_str(), editor.name + "   " + platforms, state,
-                            state == tr("Update") ? ui::color::Accent : ui::color::TextDim)
-                        .activated)
+                if (editor.library()) platforms = tr("Library");
+                if (ui::row(editor.id.c_str(), editor.name + "   " + platforms, state, stateColor).activated)
                     app.push(makeRepoEditorScreen(url_, editor.id));
             }
         }

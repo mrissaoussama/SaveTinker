@@ -12,7 +12,7 @@ std::expected<st::Document, std::string> loadSave(App& app, const st::SaveInfo& 
     auto mount = app.platform().mount(save);
     if (!mount) return std::unexpected(mount.error());
     try {
-        return st::loadDocument(**mount);
+        return st::loadDocument(**mount, [&platform = app.platform(), save] { return platform.mount(save); });
     } catch (const std::exception& error) {
         return std::unexpected(trf("cannot read the save: {}", error.what()));
     }
@@ -21,13 +21,15 @@ std::expected<st::Document, std::string> loadSave(App& app, const st::SaveInfo& 
 std::expected<void, std::string> writeSave(App& app, SaveTarget& target, const st::Document& document, const std::string& reason) {
     auto mount = app.platform().mount(target.save);
     if (!mount) return std::unexpected(mount.error());
-    std::uintmax_t needed = 0;
-    for (const auto& name : document.fileNames()) needed += document.file(name).size();
+    // The backup copies the whole save; writing needs room for the edited files on top of that.
+    std::uintmax_t needed = document.touchedSize();
+    if (app.settings().autoBackup && !target.backedUp)
+        for (const auto& name : document.fileNames()) needed += document.fileSize(name);
     std::error_code spaceError;
     const auto space = std::filesystem::space(app.platform().dataRoot(), spaceError);
-    if (!spaceError && space.available < needed * 2 + (1u << 20))
+    if (!spaceError && space.available < needed + (1u << 20))
         return std::unexpected(trf("Not enough free space on the SD card: {} needed, {} free. Nothing was written.",
-                                   ui::formatSize(needed * 2), ui::formatSize(space.available)));
+                                   ui::formatSize(needed), ui::formatSize(space.available)));
     if (app.settings().autoBackup && !target.backedUp) {
         auto record = app.backups().create(**mount, target.save, target.titleName, reason);
         if (!record) return std::unexpected(trf("backup failed, nothing was written: {}", record.error()));
@@ -42,7 +44,8 @@ std::expected<void, std::string> writeSave(App& app, SaveTarget& target, const s
     return {};
 }
 
-bool drawReviewChanges(App& app, const st::Document& document, const std::function<void()>& onConfirm) {
+bool drawReviewChanges(App& app, const st::Document& document, const std::function<void()>& onConfirm,
+                       const std::vector<st::FieldChange>& fields) {
     bool open = true;
     ImGui::SetNextWindowPos(ImGui::GetIO().DisplaySize * 0.5f, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 30, ImGui::GetFontSize() * 20));
@@ -57,6 +60,16 @@ bool drawReviewChanges(App& app, const st::Document& document, const std::functi
         ImGui::BeginChild("##changes", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 1.4f));
         if (ranges.empty()) {
             ui::dimText(tr("The save matches what was loaded. Writing it again is harmless."));
+        }
+        if (!fields.empty()) {
+            ui::sectionTitle(tr("Values"));
+            for (const auto& field : fields) {
+                const std::string label = field.where.empty() ? field.label : field.where + " > " + field.label;
+                ImGui::PushID(field.id.c_str());
+                ui::row("##field", label, field.before + "  " + ui::glyph("\xE2\x86\x92", "->") + "  " + field.after, ui::color::Modified);
+                ImGui::PopID();
+            }
+            ui::sectionTitle(tr("Files"));
         }
         for (const auto& [file, totals] : perFile) {
             ImGui::TextUnformatted(file.c_str());

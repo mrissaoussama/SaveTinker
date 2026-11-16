@@ -127,14 +127,28 @@ std::string relativePath(const fs::path& path, const fs::path& root) {
     return path.lexically_relative(root).generic_string();
 }
 
-Document loadDocument(SaveMount& mount) {
+Document loadDocument(SaveMount& mount, const MountOpener& reopen) {
     Document document;
-    for (const auto& entry : mount.listFiles()) document.addFile(entry.path, mount.read(entry.path));
+    const auto entries = mount.listFiles();
+    std::uint64_t total = 0;
+    for (const auto& entry : entries) total += entry.size;
+    for (const auto& entry : entries) {
+        if (reopen && total > kEagerLoadLimit && entry.size > kLazyFileSize) {
+            document.addLazyFile(entry.path, entry.size, [reopen, path = entry.path] {
+                auto mounted = reopen();
+                if (!mounted) throw std::runtime_error("cannot read " + path + ": " + mounted.error());
+                return (*mounted)->read(path);
+            });
+        } else {
+            document.addFile(entry.path, mount.read(entry.path));
+        }
+    }
     return document;
 }
 
 void storeDocument(const Document& document, SaveMount& mount) {
-    for (const auto& name : document.fileNames()) {
+    // Only files that were edited are compared with what is on disk; the rest were never changed.
+    for (const auto& name : document.touchedFiles()) {
         const auto& content = document.file(name).bytes();
         if (mount.read(name) != content) mount.write(name, content);
     }

@@ -33,6 +33,44 @@ std::string uiValueToString(const UiValue& value) {
 
 namespace {
 
+bool valuesEqual(const UiValue& a, const UiValue& b);
+
+}
+
+std::string describeValue(const UiNode& node, const UiValue& value) {
+    switch (node.kind) {
+    case WidgetKind::Toggle: {
+        const bool on = std::holds_alternative<bool>(value) && std::holds_alternative<bool>(node.onValue)
+                            ? std::get<bool>(value) == std::get<bool>(node.onValue)
+                            : valuesEqual(value, node.onValue);
+        return on ? "On" : "Off";
+    }
+    case WidgetKind::Choice:
+    case WidgetKind::Segmented:
+        for (const auto& option : node.options)
+            if (valuesEqual(option.value, value)) return option.label;
+        return uiValueToString(value);
+    case WidgetKind::Flags: {
+        std::string text;
+        const auto* mask = std::get_if<std::int64_t>(&value);
+        for (const auto& option : node.options) {
+            const auto bit = std::get_if<std::int64_t>(&option.value);
+            if (mask && bit && ((static_cast<std::uint64_t>(*mask) >> *bit) & 1u)) text += (text.empty() ? "" : ", ") + option.label;
+        }
+        return text.empty() ? "none" : text;
+    }
+    case WidgetKind::Integer:
+        if (node.hex && std::holds_alternative<std::int64_t>(value)) return std::format("0x{:X}", std::get<std::int64_t>(value));
+        return uiValueToString(value);
+    case WidgetKind::Float:
+        if (auto number = std::get_if<double>(&value)) return std::format("{:.6g}", *number);
+        return uiValueToString(value);
+    default: return uiValueToString(value);
+    }
+}
+
+namespace {
+
 bool valuesEqual(const UiValue& a, const UiValue& b) {
     if (a.index() == b.index()) return a == b;
     auto asNumber = [](const UiValue& v) -> std::optional<double> {
@@ -605,6 +643,8 @@ EditorSession::EditorSession(ScriptHost& host) : host_(host) {
     registerUiTypes(L);
     lua_newtable(L);
     stateTable_ = luaL_ref(L, LUA_REGISTRYINDEX);
+    lua_newtable(L);
+    trackedTable_ = luaL_ref(L, LUA_REGISTRYINDEX);
 }
 
 EditorSession::~EditorSession() {
@@ -612,6 +652,7 @@ EditorSession::~EditorSession() {
     if (context_) context_->active = false;
     if (refsTable_) luaL_unref(L, LUA_REGISTRYINDEX, refsTable_);
     luaL_unref(L, LUA_REGISTRYINDEX, stateTable_);
+    luaL_unref(L, LUA_REGISTRYINDEX, trackedTable_);
 }
 
 bool EditorSession::hasUi() {
@@ -688,6 +729,7 @@ std::expected<void, std::string> EditorSession::rebuild() {
     collectLinks(root_.nodes, topLinks_);
     breadcrumbs_.clear();
     for (const auto& page : stack_) breadcrumbs_.push_back({page.id, page.title});
+    refreshChanged();
     return {};
 }
 
@@ -746,8 +788,98 @@ std::expected<void, std::string> EditorSession::invoke(int functionRef, const st
     return rebuild();
 }
 
+std::expected<UiValue, std::string> EditorSession::readBinding(int table, int ref) {
+    lua_State* L = host_.state();
+    lua_rawgeti(L, LUA_REGISTRYINDEX, table);
+    lua_rawgeti(L, -1, ref);
+    lua_remove(L, -2);
+    const int binding = lua_gettop(L);
+    lua_getfield(L, binding, "get");
+    lua_insert(L, binding);
+    if (auto called = host_.call(1, 1); !called) return std::unexpected(called.error());
+    UiValue value = readValue(L, -1);
+    lua_pop(L, 1);
+    return value;
+}
+
+std::expected<UiValue, std::string> EditorSession::originalValue(const UiNode& node) {
+    if (!node.bindingRef) return std::unexpected("'" + node.label + "' is not tied to the save");
+    if (const Tracked* item = findTracked(node)) return item->before;
+    // The getter works out offsets from the current file; once a file changed size they no longer fit the loaded bytes.
+    if (host_.document().sizeChanged())
+        return std::unexpected("the save changed size since loading, so the loaded value of '" + node.label + "' is unknown");
+    return host_.document().withOriginals([&] { return readBinding(refsTable_, node.bindingRef); });
+}
+
+const EditorSession::Tracked* EditorSession::findTracked(const UiNode& node) {
+    // Several bindings can share a widget id (a page that shows the selected slot), so the entry must also
+    // read the value the widget shows now.
+    for (const auto& item : tracked_) {
+        if (item.node.id != node.id) continue;
+        auto current = readBinding(trackedTable_, item.bindingRef);
+        if (current && valuesEqual(*current, node.value)) return &item;
+    }
+    return nullptr;
+}
+
+void EditorSession::track(const UiNode& node) {
+    if (!node.bindingRef || findTracked(node)) return;
+    // Before any size change the loaded bytes still fit the getter; after one, the value shown just before this
+    // first edit is the best record of the loaded value.
+    UiValue before = node.value;
+    if (!host_.document().sizeChanged()) {
+        auto loaded = host_.document().withOriginals([&] { return readBinding(refsTable_, node.bindingRef); });
+        if (!loaded) return;
+        before = std::move(*loaded);
+    }
+    std::string where;
+    for (const auto& crumb : breadcrumbs_) where += (where.empty() ? "" : " > ") + crumb.title;
+    lua_State* L = host_.state();
+    lua_rawgeti(L, LUA_REGISTRYINDEX, trackedTable_);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, refsTable_);
+    lua_rawgeti(L, -1, node.bindingRef);
+    lua_remove(L, -2);
+    const int ref = luaL_ref(L, -2);
+    lua_pop(L, 1);
+    tracked_.push_back({node, where, std::move(before), ref});
+}
+
+void EditorSession::refreshChanged() {
+    changedIds_.clear();
+    if (tracked_.empty()) return;
+    std::function<void(const std::vector<UiNode>&)> visit = [&](const std::vector<UiNode>& nodes) {
+        for (const auto& node : nodes) {
+            visit(node.children);
+            if (!node.bindingRef) continue;
+            const Tracked* found = findTracked(node);
+            if (found && !valuesEqual(found->before, node.value)) changedIds_.insert(node.id);
+        }
+    };
+    visit(root_.nodes);
+    for (const auto& page : stack_) visit(page.nodes);
+}
+
+std::vector<FieldChange> EditorSession::fieldChanges() {
+    std::vector<FieldChange> changes;
+    for (const auto& item : tracked_) {
+        auto current = readBinding(trackedTable_, item.bindingRef);
+        if (!current || valuesEqual(*current, item.before)) continue;
+        changes.push_back({item.node.id, item.node.label, item.where, describeValue(item.node, item.before), describeValue(item.node, *current)});
+    }
+    return changes;
+}
+
+std::expected<void, std::string> EditorSession::reset(const UiNode& node) {
+    if (!node.editable()) return std::unexpected("'" + node.label + "' is read only");
+    auto original = originalValue(node);
+    if (!original) return std::unexpected(original.error());
+    if (valuesEqual(*original, node.value)) return {};
+    return invoke(node.changeRef, "Reset " + node.label, &*original, node.bindingRef);
+}
+
 std::expected<void, std::string> EditorSession::setValue(const UiNode& node, const UiValue& value) {
     if (!node.editable()) return std::unexpected("'" + node.label + "' is read only");
+    track(node);
     UiValue checked = value;
     if (node.kind == WidgetKind::Integer || node.kind == WidgetKind::Float) {
         const double number = std::holds_alternative<std::int64_t>(value) ? static_cast<double>(std::get<std::int64_t>(value))
@@ -768,6 +900,7 @@ std::expected<void, std::string> EditorSession::setValue(const UiNode& node, con
 
 std::expected<void, std::string> EditorSession::setFlag(const UiNode& node, std::size_t optionIndex, bool enabled) {
     if (optionIndex >= node.options.size()) return std::unexpected("no such option");
+    track(node);
     const auto bit = asInteger(node.options[optionIndex].value);
     auto mask = static_cast<std::uint64_t>(asInteger(node.value));
     mask = enabled ? (mask | (1ull << bit)) : (mask & ~(1ull << bit));

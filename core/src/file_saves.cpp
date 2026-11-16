@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr std::uintmax_t kMaxSaveSize = 32u << 20;
-const std::set<std::string> kSaveExtensions = {".sav", ".srm", ".sa1", ".dsv"};
+const std::set<std::string> kSaveExtensions = {".sav", ".srm", ".sa1", ".dsv", ".fla", ".eep", ".sra"};
 
 std::string lower(std::string text) {
     std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -54,6 +54,20 @@ std::optional<RomIdentity> readRomIdentity(const fs::path& rom) {
     if (extension == ".nds" || extension == ".dsi") {
         RomIdentity identity{"nds", printable(header + 0x0C, 4), printable(header, 12)};
         if (isGameCode(identity.gameCode)) return identity;
+    }
+    return std::nullopt;
+}
+
+// Looks for the ROM a save belongs to: next to it, or one folder up for loaders that keep saves in a
+// subfolder (TWiLight Menu++ uses saves/, others use save/ or a per-system folder).
+std::optional<RomIdentity> findRomForSave(const fs::path& save) {
+    for (const auto& folder : {save.parent_path(), save.parent_path().parent_path()}) {
+        if (folder.empty()) continue;
+        for (const char* romExtension : {".gba", ".nds", ".dsi"}) {
+            auto rom = folder / save.filename();
+            rom.replace_extension(romExtension);
+            if (auto identity = readRomIdentity(rom)) return identity;
+        }
     }
     return std::nullopt;
 }
@@ -109,6 +123,13 @@ SaveLocation describeSaveLocation(const fs::path& path) {
     std::string name = game == game.root_path() ? "" : pathToUtf8(game.filename());
     if (!folder) name = name.empty() ? pathToUtf8(path.stem()) : name + " - " + pathToUtf8(path.stem());
     location.name = name.empty() ? pathToUtf8(path) : name;
+    if (!folder) {
+        if (auto identity = findRomForSave(path)) {
+            location.platform = identity->platform;
+            location.titleId = cartridgeTitleId(identity->gameCode);
+            if (!identity->title.empty()) location.name = identity->title;
+        }
+    }
     return location;
 }
 
@@ -209,12 +230,7 @@ std::vector<FileSavePlatform::Found> FileSavePlatform::scan() const {
             const auto canonical = it->path().generic_string();
             if (!seenPaths.insert(canonical).second) continue;
 
-            std::optional<RomIdentity> identity;
-            for (const char* romExtension : {".gba", ".nds", ".dsi"}) {
-                auto rom = it->path();
-                rom.replace_extension(romExtension);
-                if ((identity = readRomIdentity(rom))) break;
-            }
+            const auto identity = findRomForSave(it->path());
             Found entry;
             const auto stem = it->path().stem().string();
             if (identity) {
@@ -263,10 +279,13 @@ std::expected<std::unique_ptr<SaveMount>, std::string> FileSavePlatform::mount(c
     if (fs::is_directory(save.path, error))
         return std::make_unique<DirectorySaveMount>(save.path, DirectorySaveMount::CommitHook{}, 0, true);
     if (!fs::is_regular_file(save.path, error)) return std::unexpected("save file not found: " + save.path.string());
-    const bool cartridge = std::ranges::any_of(folders_, [&](const fs::path& folder) {
+    // GBA and DS saves are one raw image that editors know as save.bin, wherever it was found.
+    bool cartridge = std::ranges::any_of(folders_, [&](const fs::path& folder) {
         const auto relative = save.path.lexically_relative(folder);
         return !relative.empty() && !relative.native().starts_with(fs::path("..").native());
     });
+    for (const auto& location : locations_)
+        if (pathFromUtf8(location.path) == save.path && (location.platform == "nds" || location.platform == "gba")) cartridge = true;
     if (!cartridge) return std::make_unique<FileSaveMount>(save.path, pathToUtf8(save.path.filename()));
     return std::make_unique<FileSaveMount>(save.path);
 }

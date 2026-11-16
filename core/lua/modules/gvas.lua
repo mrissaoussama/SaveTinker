@@ -366,6 +366,117 @@ local function encodeString(text)
     return string.pack("<i4", -(#body // 2)) .. body
 end
 
+-- Packed saves. Many games store the GVAS data compressed: as one zlib or gzip stream, behind a short
+-- header of their own, or in Unreal's own chunked format (the FArchive compressed tag 0x9E2A83C1).
+local memfile = require("st.memfile")
+
+local PACKAGE_TAG = 0x9E2A83C1
+
+local function isZlib(data, at)
+    local cmf, flg = data:byte(at, at + 1)
+    return cmf and flg and cmf & 0x0F == 8 and cmf >> 4 <= 7 and (cmf * 256 + flg) % 31 == 0
+end
+
+local function inflate(data)
+    local ok, result = pcall(st.zlib.decompress, data)
+    if ok then return result end
+end
+
+-- Unreal's chunked format: tag, block size, total compressed and uncompressed sizes, one size pair per
+-- block, then the blocks; several such groups can follow each other.
+local function unpackChunks(raw)
+    local out, pos = {}, 1
+    local blockSize
+    while pos <= #raw do
+        if #raw - pos + 1 < 32 then return nil end
+        local tag, block, packedTotal, total = string.unpack("<i8i8i8i8", raw, pos)
+        if tag & 0xFFFFFFFF ~= PACKAGE_TAG or tag >> 32 ~= 0 or block <= 0 then return nil end
+        blockSize = blockSize or block
+        pos = pos + 32
+        local count = (total + block - 1) // block
+        local pairs = {}
+        for i = 1, count do
+            if #raw - pos + 1 < 16 then return nil end
+            pairs[i] = { string.unpack("<i8i8", raw, pos) }
+            pos = pos + 16
+        end
+        for _, size in ipairs(pairs) do
+            local piece = inflate(raw:sub(pos, pos + size[1] - 1))
+            if not piece or #piece ~= size[2] then return nil end
+            out[#out + 1] = piece
+            pos = pos + size[1]
+        end
+        if packedTotal < 0 then return nil end
+    end
+    return table.concat(out), blockSize
+end
+
+local function packChunks(data, blockSize)
+    local blocks, sizes, packedTotal = {}, {}, 0
+    for at = 1, math.max(#data, 1), blockSize do
+        local piece = data:sub(at, at + blockSize - 1)
+        local packed = st.zlib.compress(piece)
+        blocks[#blocks + 1] = packed
+        sizes[#sizes + 1] = string.pack("<i8i8", #packed, #piece)
+        packedTotal = packedTotal + #packed
+    end
+    return string.pack("<i8i8i8i8", PACKAGE_TAG, blockSize, packedTotal, #data) .. table.concat(sizes) .. table.concat(blocks)
+end
+
+-- In a header in front of the compressed data, 32-bit fields equal to the old sizes are taken to be
+-- those sizes and are updated, so a header that records them stays right without knowing the game.
+local function patchHeader(header, oldPacked, oldPlain, newPacked, newPlain)
+    for at = 1, #header - 3 do
+        local value = string.unpack("<I4", header, at)
+        local replacement = (value == oldPacked and newPacked) or (value == oldPlain and newPlain)
+        if replacement and value ~= 0 then header = header:sub(1, at - 1) .. string.pack("<I4", replacement) .. header:sub(at + 4) end
+    end
+    return header
+end
+
+-- How a raw file holds its GVAS data, or nil when it does not look like any known packing.
+local function packing(raw)
+    if raw:sub(1, 4) == "GVAS" then return { kind = "plain" } end
+    if raw:sub(1, 2) == "\31\139" then
+        local ok, data = pcall(st.gzip.decompress, raw)
+        if ok and data:sub(1, 4) == "GVAS" then return { kind = "gzip", data = data } end
+    end
+    if #raw >= 32 and string.unpack("<I4", raw) == PACKAGE_TAG then
+        local data, blockSize = unpackChunks(raw)
+        if data and data:sub(1, 4) == "GVAS" then return { kind = "chunks", data = data, blockSize = blockSize } end
+    end
+    for at = 1, math.min(#raw - 1, 64) do
+        if isZlib(raw, at) then
+            local data = inflate(raw:sub(at))
+            if data and data:sub(1, 4) == "GVAS" then return { kind = "zlib", data = data, offset = at - 1 } end
+        end
+    end
+end
+
+-- Opens `file` as a GVAS save: the file itself when it is plain, or a view of the unpacked data that
+-- packs edits back the same way. Returns the file-like object and the packing name, or nil and a reason.
+function gvas.open(file)
+    if file:size() >= 4 and file:bytes(0, 4) == "GVAS" then return file, "plain" end
+    local raw = file:content()
+    local found = packing(raw)
+    if not found then return nil, "not an Unreal save" end
+    local kind, blockSize, offset = found.kind, found.blockSize, found.offset
+    local view = memfile.view(file, function(current)
+        local again = packing(current)
+        if not again then return nil, "the save is no longer a packed Unreal save" end
+        return again.data or current
+    end, function(data, current)
+        if kind == "gzip" then return st.gzip.compress(data) end
+        if kind == "chunks" then return packChunks(data, blockSize or 131072) end
+        local header = current:sub(1, offset)
+        local oldPacked = #current - offset
+        local oldPlain = #(inflate(current:sub(offset + 1)) or "")
+        local packed = st.zlib.compress(data)
+        return patchHeader(header, oldPacked, oldPlain, #packed, #data) .. packed
+    end, file:name() .. " (" .. kind .. ")")
+    return view, kind
+end
+
 -- A binding for a scalar or string node; strings may change length, which updates every enclosing size.
 function gvas.bind(file, node)
     if node.kind == "bool" and node.mask then
@@ -376,7 +487,13 @@ function gvas.bind(file, node)
     elseif node.kind == "bool" then
         return st.bind(function() return file:u8(node.at) ~= 0 end, function(on) file:set(node.at, "u8", on and 1 or 0) end)
     elseif node.kind == "string" then
-        return st.bind(function() return node.value end, function(text)
+        return st.bind(function()
+            -- Read from the file, so undo and the loaded-value view see the text as stored now.
+            local reader = setmetatable({ file = file, pos = node.place.at, size = file:size() }, Reader)
+            local ok, text = pcall(reader.fstring, reader)
+            if ok and reader.pos - node.place.at == node.place.bytes then return text end
+            return node.value
+        end, function(text)
             local encoded = encodeString(text)
             local delta = #encoded - node.place.bytes
             st.transaction(node.name, function()

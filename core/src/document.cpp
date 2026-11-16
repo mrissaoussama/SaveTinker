@@ -7,26 +7,72 @@
 namespace st {
 
 void Document::addFile(const std::string& name, Bytes content) {
-    originals_[name] = content;
+    ++revisions_[name];
+    pending_.erase(name);
+    originals_.erase(name);
     files_[name] = ByteBuffer(std::move(content));
+}
+
+void Document::addLazyFile(const std::string& name, std::uint64_t size, FileLoader loader) {
+    files_.erase(name);
+    originals_.erase(name);
+    pending_[name] = {size, std::move(loader)};
 }
 
 std::vector<std::string> Document::fileNames() const {
     std::vector<std::string> names;
     for (const auto& [name, _] : files_) names.push_back(name);
+    for (const auto& [name, _] : pending_) names.push_back(name);
+    std::ranges::sort(names);
     return names;
+}
+
+std::uint64_t Document::fileSize(const std::string& name) const {
+    if (auto lazy = pending_.find(name); lazy != pending_.end()) return lazy->second.first;
+    return file(name).size();
 }
 
 const ByteBuffer& Document::file(const std::string& name) const {
     auto found = files_.find(name);
-    if (found == files_.end()) throw std::out_of_range("no such file: " + name);
-    return found->second;
+    if (found != files_.end()) return found->second;
+    auto lazy = pending_.find(name);
+    if (lazy == pending_.end()) throw std::out_of_range("no such file: " + name);
+    // Load before dropping the pending entry, so a failed read can be retried.
+    ByteBuffer content(lazy->second.second());
+    pending_.erase(lazy);
+    return files_.emplace(name, std::move(content)).first->second;
 }
 
 ByteBuffer& Document::mutableFile(const std::string& name) {
-    auto found = files_.find(name);
-    if (found == files_.end()) throw std::out_of_range("no such file: " + name);
-    return found->second;
+    return const_cast<ByteBuffer&>(file(name));
+}
+
+std::uint64_t Document::revision(const std::string& name) const {
+    auto found = revisions_.find(name);
+    return found == revisions_.end() ? 0 : found->second;
+}
+
+std::vector<std::string> Document::touchedFiles() const {
+    std::vector<std::string> names;
+    for (const auto& [name, _] : originals_) names.push_back(name);
+    return names;
+}
+
+std::uint64_t Document::touchedSize() const {
+    std::uint64_t total = 0;
+    for (const auto& [name, _] : originals_) total += files_.at(name).size();
+    return total;
+}
+
+bool Document::sizeChanged() const {
+    return std::ranges::any_of(originals_, [&](const auto& item) { return files_.at(item.first).size() != item.second.size(); });
+}
+
+void Document::swapOriginals() {
+    for (auto& [name, original] : originals_) {
+        std::swap(files_.at(name).bytes(), original);
+        ++revisions_[name];
+    }
 }
 
 void Document::write(const std::string& file, std::size_t offset, ByteView data) {
@@ -42,6 +88,7 @@ void Document::splice(const std::string& file, std::size_t offset, std::size_t l
         throw std::out_of_range("splice out of range in " + file);
     Patch patch{file, offset, buffer.readBytes(offset, length), Bytes(data.begin(), data.end())};
     if (patch.before == patch.after) return;
+    if (!originals_.contains(file)) originals_[file] = buffer.bytes();
     apply(patch, true);
     record(std::move(patch));
     notify(file);
@@ -52,6 +99,7 @@ void Document::setContent(const std::string& file, Bytes content) {
 }
 
 void Document::apply(const Patch& patch, bool forward) {
+    ++revisions_[patch.file];
     auto& bytes = mutableFile(patch.file).bytes();
     const Bytes& removed = forward ? patch.before : patch.after;
     const Bytes& inserted = forward ? patch.after : patch.before;
@@ -168,9 +216,8 @@ void Document::markSaved() {
 
 std::vector<ChangedRange> Document::changesSinceLoad() const {
     std::vector<ChangedRange> ranges;
-    for (const auto& [name, buffer] : files_) {
-        const Bytes& current = buffer.bytes();
-        const Bytes& original = originals_.at(name);
+    for (const auto& [name, original] : originals_) {
+        const Bytes& current = files_.at(name).bytes();
         const std::size_t common = std::min(current.size(), original.size());
         std::size_t i = 0;
         while (i < common) {

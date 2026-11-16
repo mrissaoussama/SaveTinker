@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -32,13 +33,36 @@ struct ChangedRange {
 class Document {
 public:
     using ChangeListener = std::function<void(const std::string& file)>;
+    using FileLoader = std::function<Bytes()>;
 
     explicit Document(std::size_t historyLimit = 1000) : historyLimit_(historyLimit) {}
 
     void addFile(const std::string& name, Bytes content);
-    bool hasFile(const std::string& name) const { return files_.contains(name); }
+    // The content is read the first time something asks for it, so files an editor never opens cost no memory.
+    void addLazyFile(const std::string& name, std::uint64_t size, FileLoader loader);
+    bool hasFile(const std::string& name) const { return files_.contains(name) || pending_.contains(name); }
+    bool isLoaded(const std::string& name) const { return files_.contains(name); }
     std::vector<std::string> fileNames() const;
+    std::uint64_t fileSize(const std::string& name) const;
+    // Goes up whenever the file's content changes (edits, undo, redo, the original-content view).
+    std::uint64_t revision(const std::string& name) const;
     const ByteBuffer& file(const std::string& name) const;
+    // Files that were edited at some point since loading, even if their content is back to the original.
+    std::vector<std::string> touchedFiles() const;
+    std::uint64_t touchedSize() const;
+    // True when an edit made some file longer or shorter, so offsets worked out now no longer fit the loaded bytes.
+    bool sizeChanged() const;
+
+    // Runs `fn` with every file showing its content as loaded, then restores the edits. `fn` must not write.
+    template <class Fn>
+    decltype(auto) withOriginals(Fn&& fn) {
+        struct Swap {
+            Document& document;
+            explicit Swap(Document& d) : document(d) { document.swapOriginals(); }
+            ~Swap() { document.swapOriginals(); }
+        } swap(*this);
+        return fn();
+    }
 
     void write(const std::string& file, std::size_t offset, ByteView data);
     void splice(const std::string& file, std::size_t offset, std::size_t length, ByteView data);
@@ -75,12 +99,15 @@ public:
 
 private:
     ByteBuffer& mutableFile(const std::string& name);
+    void swapOriginals();
     void apply(const Patch& patch, bool forward);
     void record(Patch patch);
     void pushTransaction(Transaction transaction);
     void notify(const std::string& file);
 
-    std::map<std::string, ByteBuffer> files_;
+    mutable std::map<std::string, ByteBuffer> files_;
+    mutable std::map<std::string, std::pair<std::uint64_t, FileLoader>> pending_;
+    std::map<std::string, std::uint64_t> revisions_;
     std::map<std::string, Bytes> originals_;
     std::vector<Transaction> history_;
     std::size_t cursor_ = 0;

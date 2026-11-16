@@ -53,6 +53,12 @@ RowResult row(const char* id, const std::string& label, const std::string& value
               bool selected = false, float height = 0.0f);
 
 RowResult wrappedRow(const char* id, const std::string& label, bool selected, int maxLines);
+// Draws one line clipped to `width`; with `scroll`, text that does not fit pans so all of it can be read.
+// `text` when the font can draw every character of it, else `fallback` (the 3DS font lacks some symbols).
+const char* glyph(const char* text, const char* fallback);
+
+void drawScrollingText(ImDrawList* draw, const std::string& text, ImVec2 position, float width, float top, float bottom, ImU32 color,
+                       bool scroll);
 
 void toggleSwitch(ImVec2 rightEdge, float rowHeight, bool on);
 void badge(const std::string& text, ImU32 color);

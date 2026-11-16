@@ -3,6 +3,7 @@
 
 #include "savetinker/compression.hpp"
 #include "savetinker/crypto.hpp"
+#include "savetinker/editor_store.hpp"
 #include "savetinker/lzstring.hpp"
 
 #include "lua_support.hpp"
@@ -333,6 +334,43 @@ int jsonEncode(lua_State* L) {
     return 1;
 }
 
+// st.zip.read(data) -> { {name = ..., data = ...}, ... }; st.zip.write(entries) -> data.
+int zipReadLua(lua_State* L) {
+    const PackageLimits limits{4096, kMaxDecompressedSize, kMaxDecompressedSize, 0};
+    auto files = readZip(asBytes(checkString(L, 1)), limits);
+    if (!files) return luaL_error(L, "%s", files.error().c_str());
+    lua_createtable(L, static_cast<int>(files->size()), 0);
+    for (std::size_t i = 0; i < files->size(); ++i) {
+        lua_createtable(L, 0, 2);
+        lua_pushlstring(L, (*files)[i].path.data(), (*files)[i].path.size());
+        lua_setfield(L, -2, "name");
+        pushBytes(L, (*files)[i].content);
+        lua_setfield(L, -2, "data");
+        lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
+    }
+    return 1;
+}
+
+int zipWriteLua(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    std::vector<PackageFile> files;
+    const auto count = static_cast<lua_Integer>(lua_rawlen(L, 1));
+    for (lua_Integer i = 1; i <= count; ++i) {
+        lua_rawgeti(L, 1, i);
+        if (!lua_istable(L, -1)) return luaL_error(L, "zip entry %d must be {name =, data =}", static_cast<int>(i));
+        lua_getfield(L, -1, "name");
+        lua_getfield(L, -2, "data");
+        PackageFile file;
+        file.path = std::string(checkString(L, -2));
+        const auto data = asBytes(checkString(L, -1));
+        file.content.assign(data.begin(), data.end());
+        files.push_back(std::move(file));
+        lua_pop(L, 3);
+    }
+    pushBytes(L, writeZip(files));
+    return 1;
+}
+
 }
 
 void registerUtilities(lua_State* L, int stTableIndex) {
@@ -402,6 +440,14 @@ void registerUtilities(lua_State* L, int stTableIndex) {
     };
     luaL_newlib(L, cryptoFunctions);
     lua_setfield(L, stTableIndex, "crypto");
+
+    static const luaL_Reg zipFunctions[] = {
+        {"read", guarded<zipReadLua>},
+        {"write", guarded<zipWriteLua>},
+        {nullptr, nullptr},
+    };
+    luaL_newlib(L, zipFunctions);
+    lua_setfield(L, stTableIndex, "zip");
 
     static const luaL_Reg formatFunctions[] = {
         {"sarc", guarded<sarcRead>},

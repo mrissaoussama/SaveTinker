@@ -4,6 +4,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -83,6 +84,18 @@ struct UiPage {
     std::vector<UiNode> nodes;
 };
 
+// One value edited through the editor screen, compared with what the save held when it was opened.
+struct FieldChange {
+    std::string id;
+    std::string label;
+    std::string where;
+    std::string before;
+    std::string after;
+};
+
+// The text a widget shows for a value: option labels for lists, On/Off for switches, hex when asked.
+std::string describeValue(const UiNode& node, const UiValue& value);
+
 struct Breadcrumb {
     std::string id;
     std::string title;
@@ -115,11 +128,32 @@ public:
     std::expected<void, std::string> undo();
     std::expected<void, std::string> redo();
 
+    // The value the widget's binding gave when the save was loaded.
+    std::expected<UiValue, std::string> originalValue(const UiNode& node);
+    std::expected<void, std::string> reset(const UiNode& node);
+    // Edited fields whose value now differs from the loaded save, in the order they were first edited.
+    std::vector<FieldChange> fieldChanges();
+    bool changed(const UiNode& node) const { return changedIds_.contains(node.id); }
+
     struct BuildContext;
 
 private:
     std::expected<void, std::string> invoke(int functionRef, const std::string& label, const UiValue* argument,
                                             int bindingRef = 0);
+    std::expected<UiValue, std::string> readBinding(int table, int ref);
+    void track(const UiNode& node);
+    void refreshChanged();
+
+    struct Tracked {
+        UiNode node;
+        std::string where;
+        UiValue before;
+        int bindingRef = 0;
+    };
+    const Tracked* findTracked(const UiNode& node);
+    std::vector<Tracked> tracked_;
+    std::set<std::string> changedIds_;
+    int trackedTable_ = 0;
 
     ScriptHost& host_;
     std::shared_ptr<BuildContext> context_;

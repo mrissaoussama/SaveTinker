@@ -22,6 +22,7 @@ public:
     std::optional<std::string> runningTitleId() override { return std::nullopt; }
     std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) override;
     std::expected<std::shared_ptr<GameData>, std::string> openGameData(const std::string& titleId) override;
+    void afterRestore(const SaveInfo& save) override;
 
     static std::string dsTitleId(const std::string& gameCode);
 
@@ -32,6 +33,7 @@ private:
         std::uint16_t version = 0;
         std::optional<std::uint16_t> updateVersion;
         std::vector<std::string> addOns;
+        bool dsiWare = false;
     };
 
     std::vector<InstalledTitle> scan();

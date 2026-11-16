@@ -50,7 +50,7 @@ struct BrokenEditor {
     std::string error;
 };
 
-// Editors live in <root>/<editor id>/; shared Lua libraries live in <root>/_lib/.
+// Editors and libraries live in <root>/<id>/. Loose shared modules in <root>/_lib/ are still found by require.
 class EditorStore {
 public:
     explicit EditorStore(std::filesystem::path root);
@@ -68,6 +68,13 @@ public:
     std::expected<void, std::string> remove(std::string_view id);
 
     std::vector<InstalledEditor> installedVersions() const;
+
+    // Dependencies of `manifest`, and of those, that are not installed in a fitting version.
+    std::vector<Dependency> missingDependencies(const EditorManifest& manifest) const;
+    // Folders of every installed dependency, nearest first, for require.
+    std::vector<std::filesystem::path> dependencyFolders(const EditorManifest& manifest) const;
+    // Installed editors that list `id` as a dependency.
+    std::vector<std::string> dependents(std::string_view id) const;
 
 private:
     std::filesystem::path root_;

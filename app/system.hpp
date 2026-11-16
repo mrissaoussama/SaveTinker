@@ -34,7 +34,16 @@ public:
     virtual bool acceptsDroppedFiles() const { return false; }
     virtual std::vector<std::string> defaultSaveFolders() const { return {}; }
     virtual std::string environmentWarning() const { return {}; }
+    // True when the app runs with less memory than the console could give it (album mode on Switch).
+    virtual bool limitedMemory() const { return false; }
+    // Starts `titleId` so that, with R held, the homebrew menu opens in its place with full memory.
+    virtual std::optional<std::string> relaunchWithFullMemory(const std::string&) { return "not needed on this console"; }
     virtual void requestRestart() {}
+    // The system's open dialog. Nothing means unavailable; an empty inner value means cancelled.
+    virtual bool hasNativePicker() const { return false; }
+    virtual std::optional<std::optional<std::filesystem::path>> pickPath(const std::string&, bool, const std::filesystem::path&) {
+        return std::nullopt;
+    }
 };
 
 std::unique_ptr<System> createSystem(int argc, char** argv);

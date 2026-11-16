@@ -33,6 +33,9 @@ struct ScriptContext {
 using ModuleLoader = std::function<std::optional<std::string>(std::string_view moduleName)>;
 
 ModuleLoader directoryModuleLoader(std::filesystem::path editorDir, std::filesystem::path libraryDir = {});
+// Looks in the editor folder, then in each dependency folder in order, then in the loose library folder.
+ModuleLoader packageModuleLoader(std::filesystem::path editorDir, std::vector<std::filesystem::path> dependencyDirs,
+                                 std::filesystem::path libraryDir = {});
 
 using DataLoader = std::function<std::optional<std::string>(std::string_view relativePath)>;
 DataLoader directoryDataLoader(std::filesystem::path editorDir);
@@ -67,6 +70,8 @@ public:
     std::expected<void, std::string> call(int argumentCount, int resultCount);
 
     bool hasFunction(const char* name);
+    // The save format version reported by the editor's save_version(save), if it defines one.
+    std::expected<std::optional<std::string>, std::string> saveVersion();
     std::expected<bool, std::string> detect();
     const std::string& detectReason() const;
     std::expected<void, std::string> beforeSave();

@@ -19,6 +19,8 @@ struct RepoEditorEntry {
     std::vector<std::string> authors;
     std::string source;
     std::vector<GameTarget> games;
+    std::string kind = std::string(kKindEditor);
+    std::vector<Dependency> dependencies;
     std::string downloadUrl;
     std::string sha256;
     std::uint64_t size = 0;
@@ -27,6 +29,7 @@ struct RepoEditorEntry {
 
     const GameTarget* findGame(std::string_view platform, std::string_view titleId) const;
     bool needsNewerApp() const { return apiVersion > kApiVersion; }
+    bool library() const { return kind == kKindLibrary; }
 };
 
 struct RepoIndex {
@@ -75,6 +78,8 @@ public:
     std::vector<EditorMatch> findEditors(std::string_view platform, std::string_view titleId,
                                          std::string_view gameVersion = {}) const;
     std::vector<EditorUpdate> findUpdates(const std::vector<InstalledEditor>& installed) const;
+    // The newest listed package with this id whose version fits the pattern.
+    EditorMatch findPackage(std::string_view id, std::string_view versionPattern = "*") const;
 
 private:
     std::vector<RepoSource> repos_;

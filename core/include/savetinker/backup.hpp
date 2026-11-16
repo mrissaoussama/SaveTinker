@@ -42,11 +42,17 @@ public:
     std::vector<BackupRecord> list(const std::string& titleId, const std::string& slot = {}) const;
     std::expected<void, std::string> verify(const BackupRecord& record) const;
     std::expected<void, std::string> restore(const BackupRecord& record, SaveMount& mount) const;
+    // Replaces the save with the files of any folder: a copied backup, or a save from another device.
+    std::expected<void, std::string> importFolder(const std::filesystem::path& folder, SaveMount& mount) const;
+    // Copies the backed up files, without SaveTinker's record, to `folder`.
+    std::expected<BackupRecord, std::string> exportTo(const BackupRecord& record, const std::filesystem::path& folder) const;
     bool remove(const BackupRecord& record) const;
     std::size_t prune(const std::string& titleId, const std::string& slot, std::size_t keep) const;
 
 private:
     std::optional<BackupRecord> readRecord(const std::filesystem::path& directory) const;
+    std::expected<void, std::string> writeOver(const std::vector<std::pair<std::string, std::filesystem::path>>& files,
+                                               SaveMount& mount) const;
 
     std::filesystem::path root_;
     Clock clock_;

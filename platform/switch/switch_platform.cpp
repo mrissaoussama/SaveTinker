@@ -69,6 +69,14 @@ public:
 
 }
 
+std::string SwitchPlatform::gamePlatform() const {
+#ifdef SAVETINKER_SWITCH2
+    return "switch2";
+#else
+    return "switch";
+#endif
+}
+
 SwitchPlatform::SwitchPlatform() {
     accountReady_ = R_SUCCEEDED(accountInitialize(AccountServiceType_Administrator));
     nsReady_ = R_SUCCEEDED(nsInitialize());
@@ -119,7 +127,7 @@ std::vector<TitleInfo> SwitchPlatform::titles() {
         if (R_FAILED(nsListApplicationRecord(records, 64, offset, &count)) || count <= 0) break;
         for (s32 i = 0; i < count; ++i) {
             TitleInfo title;
-            title.platform = "switch";
+            title.platform = gamePlatform();
             title.titleId = formatTitleId(records[i].application_id);
             u64 controlSize = 0;
             if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, records[i].application_id,
@@ -223,9 +231,15 @@ std::expected<std::shared_ptr<GameData>, std::string> SwitchPlatform::openGameDa
     static int mounts = 0;
     const std::string device = "stgame" + std::to_string(mounts++ % 8);
     romfsUnmount(device.c_str());
-    if (const Result rc = romfsMountDataStorageFromProgram(parseTitleId(titleId), device.c_str()); R_FAILED(rc))
-        return std::unexpected(std::format("cannot open the game files (error 0x{:X})", rc));
-    return std::make_shared<RomfsGameData>(device);
+    // LayeredFS mods live on the SD card; the game reads them in place of its own files, so editors should too.
+    const std::vector<std::filesystem::path> mods{std::format("sdmc:/atmosphere/contents/{}/romfs", titleId)};
+    if (const Result rc = romfsMountDataStorageFromProgram(parseTitleId(titleId), device.c_str()); R_FAILED(rc)) {
+        const auto reason = std::format("cannot open the game files (error 0x{:X})", rc);
+        auto modded = withModFolders(std::make_shared<UnavailableGameData>(reason), mods);
+        if (std::dynamic_pointer_cast<UnavailableGameData>(modded)) return std::unexpected(reason);
+        return modded;
+    }
+    return withModFolders(std::make_shared<RomfsGameData>(device), mods);
 }
 
 }

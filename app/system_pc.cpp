@@ -2,6 +2,7 @@
 #include <imgui.h>
 #include <string_view>
 
+#include "native_dialog.hpp"
 #include "pc_platform.hpp"
 #include "system.hpp"
 
@@ -43,10 +44,19 @@ public:
 
     fs::path appPath() const override { return executable_; }
     bool acceptsDroppedFiles() const override { return true; }
+    // --no-native-dialogs keeps the built-in browser, for controller-only setups.
+    bool hasNativePicker() const override { return nativeDialogs_; }
+    std::optional<std::optional<fs::path>> pickPath(const std::string& title, bool folder, const fs::path& start) override {
+        auto picked = nativePickPath(title, folder, start);
+        if (!picked) nativeDialogs_ = false;
+        return picked;
+    }
+    void disableNativeDialogs() { nativeDialogs_ = false; }
 
 private:
     fs::path console_;
     fs::path executable_;
+    bool nativeDialogs_ = true;
 };
 
 }
@@ -68,16 +78,20 @@ void prepareDemo(const fs::path& console) {
 std::unique_ptr<System> createSystem(int argc, char** argv) {
     fs::path console = fs::current_path() / "console";
     bool demo = false;
+    bool nativeDialogs = true;
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
         if (argument == "--console" && i + 1 < argc) console = argv[++i];
         else if (argument == "--demo") demo = true;
+        else if (argument == "--no-native-dialogs") nativeDialogs = false;
     }
     if (demo) {
         console = fs::current_path() / "demo-console";
         prepareDemo(console);
     }
-    return std::make_unique<PcSystem>(console, fs::absolute(argv[0]));
+    auto system = std::make_unique<PcSystem>(console, fs::absolute(argv[0]));
+    if (!nativeDialogs) system->disableNativeDialogs();
+    return system;
 }
 
 }

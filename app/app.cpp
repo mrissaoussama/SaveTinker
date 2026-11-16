@@ -1,10 +1,12 @@
 #include "app.hpp"
+
 #include "i18n.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <fstream>
 #include <map>
 
 #include "curl_http_client.hpp"
@@ -136,6 +138,25 @@ std::vector<st::GameTarget> App::knownGames() {
         return (a.name.empty() ? a.titleId : a.name) < (b.name.empty() ? b.titleId : b.name);
     });
     return games;
+}
+
+std::filesystem::path App::logPath() const {
+    return platform_->dataRoot() / "logs" / "savetinker.log";
+}
+
+void App::log(const std::string& source, const std::string& text) {
+    const auto path = logPath();
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (std::filesystem::exists(path, error) && std::filesystem::file_size(path, error) > (512u << 10)) {
+        auto old = path;
+        old.replace_extension(".old.log");
+        std::filesystem::rename(path, old, error);
+    }
+    std::ofstream stream(path, std::ios::app);
+    if (!stream) return;
+    const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+    stream << std::format("{:%Y-%m-%d %H:%M:%S} [{}] {}\n", now, source, text);
 }
 
 void App::addSaveLocation(const std::filesystem::path& path) {
@@ -277,6 +298,7 @@ void App::checkAppUpdate(bool silent) {
 }
 
 std::string App::buttonGlyph(const std::string& button) const {
+    if (button == "L/R") return buttonGlyph("L") + (consoleGlyphs_ ? "" : "/") + buttonGlyph("R");
     if (consoleGlyphs_) {
         static const std::map<std::string, std::string> glyphs = {
             {"A", "\xEE\x83\xA0"}, {"B", "\xEE\x83\xA1"}, {"X", "\xEE\x83\xA2"}, {"Y", "\xEE\x83\xA3"},
@@ -395,13 +417,23 @@ void App::drawHeader(ImDrawList* draw, ImVec2 origin, float width, float height)
     const float textY = origin.y + (height - ImGui::GetFontSize()) * 0.5f;
     const char* name = "SaveTinker";
     draw->AddText(ImVec2(origin.x, textY), ui::color::Accent, name);
-    std::string path;
-    for (std::size_t i = 1; i < screens_.size(); ++i) path += "  \xE2\x80\xBA  " + screens_[i]->title();
-    draw->AddText(ImVec2(origin.x + ImGui::CalcTextSize(name).x, textY), ui::color::TextDim, path.c_str());
-
     const std::string warning = system_.environmentWarning();
     const std::string right = warning.empty() ? "v" SAVETINKER_VERSION : warning;
     const float rightWidth = ImGui::CalcTextSize(right.c_str()).x;
+
+    // On narrow screens the first steps of the path give way, so the current screen stays readable.
+    const std::string separator = std::string("  ") + ui::glyph("\xE2\x80\xBA", ">") + "  ";
+    const float left = origin.x + ImGui::CalcTextSize(name).x;
+    const float room = origin.x + width - rightWidth - ImGui::GetFontSize() - left;
+    std::size_t first = 1;
+    std::string path;
+    while (true) {
+        path = first > 1 ? separator + ui::glyph("\xE2\x80\xA6", "...") : "";
+        for (std::size_t i = first; i < screens_.size(); ++i) path += separator + screens_[i]->title();
+        if (ImGui::CalcTextSize(path.c_str()).x <= room || first + 1 >= screens_.size()) break;
+        ++first;
+    }
+    ui::drawScrollingText(draw, path, ImVec2(left, textY), std::max(0.0f, room), origin.y, origin.y + height, ui::color::TextDim, false);
     draw->AddText(ImVec2(origin.x + width - rightWidth, textY), warning.empty() ? ui::color::TextDim : ui::color::Warning, right.c_str());
     draw->AddLine(ImVec2(origin.x, origin.y + height), ImVec2(origin.x + width, origin.y + height), IM_COL32(60, 66, 80, 255));
 }
@@ -410,7 +442,28 @@ void App::drawFooter(ImDrawList* draw, ImVec2 origin, float width, float height)
     draw->AddLine(origin, ImVec2(origin.x + width, origin.y), IM_COL32(60, 66, 80, 255));
     float x = origin.x + width;
     const float y = origin.y + (height - ImGui::GetFontSize()) * 0.5f;
-    const auto hints = screens_.back()->hints(*this);
+    auto hints = screens_.back()->hints(*this);
+    // L and R with the same label (previous and next tab, page or file) share one legend entry.
+    for (auto it = hints.begin(); it != hints.end(); ++it) {
+        if (it->button != "L") continue;
+        const auto partner = std::ranges::find_if(hints, [&](const Hint& hint) { return hint.button == "R" && hint.label == it->label; });
+        if (partner == hints.end()) continue;
+        it->button = "L/R";
+        hints.erase(partner);
+        break;
+    }
+    // When the hints do not fit (3DS), the ones for secondary buttons go first; those buttons still work.
+    auto hintsWidth = [&] {
+        float total = 0;
+        for (const auto& hint : hints)
+            total += ImGui::CalcTextSize(hint.label.c_str()).x + ImGui::CalcTextSize(buttonGlyph(hint.button).c_str()).x +
+                     ImGui::GetFontSize() * 1.75f;
+        return total;
+    };
+    for (const char* button : {"ZR", "ZL", "-", "X", "L/R", "L", "R"}) {
+        if (hintsWidth() <= width) break;
+        std::erase_if(hints, [&](const Hint& hint) { return hint.button == button; });
+    }
     footerTargets_.clear();
     for (auto it = hints.rbegin(); it != hints.rend(); ++it) {
         const float right = x;
@@ -426,10 +479,18 @@ void App::drawFooter(ImDrawList* draw, ImVec2 origin, float width, float height)
                                 IM_COL32(70, 76, 92, 255), pad);
         }
         draw->AddText(ImVec2(x, y), ui::color::Text, glyph.c_str());
-        footerTargets_.push_back({ImVec2(x - ImGui::GetFontSize() * 0.4f, origin.y), ImVec2(right, origin.y + height), it->button});
+        if (it->button == "L/R") {
+            // Tapping the left half of the shared entry acts as L, the right half as R.
+            const float middle = x + glyphWidth * 0.5f;
+            footerTargets_.push_back({ImVec2(x - ImGui::GetFontSize() * 0.4f, origin.y), ImVec2(middle, origin.y + height), "L"});
+            footerTargets_.push_back({ImVec2(middle, origin.y), ImVec2(right, origin.y + height), "R"});
+        } else {
+            footerTargets_.push_back({ImVec2(x - ImGui::GetFontSize() * 0.4f, origin.y), ImVec2(right, origin.y + height), it->button});
+        }
         x -= ImGui::GetFontSize() * 1.4f;
     }
     footerLeft_ = ImVec2(origin.x, y);
+    footerRoom_ = std::max(0.0f, x - origin.x);
 }
 
 void App::handleFooterTaps() {

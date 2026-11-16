@@ -11,6 +11,7 @@
 #include "game_target_json.hpp"
 #include "savetinker/checksum.hpp"
 #include "savetinker/platform.hpp"
+#include "savetinker/version.hpp"
 
 namespace st {
 
@@ -119,7 +120,7 @@ std::expected<EditorPackage, std::string> openPackage(ByteView zip, const Packag
     auto manifest = parseManifest(manifestFile->text());
     if (!manifest) return std::unexpected("manifest.json: " + manifest.error());
     package.manifest = std::move(*manifest);
-    if (!package.find(package.manifest.entry))
+    if (!package.manifest.library() && !package.find(package.manifest.entry))
         return std::unexpected("entry script '" + package.manifest.entry + "' is missing");
     return package;
 }
@@ -219,6 +220,47 @@ std::expected<void, std::string> EditorStore::remove(std::string_view id) {
     fs::remove_all(editor->directory, error);
     if (error) return std::unexpected("cannot remove: " + error.message());
     return {};
+}
+
+namespace {
+
+void walkDependencies(const std::vector<InstalledEditorInfo>& installed, const EditorManifest& manifest,
+                      std::vector<std::string>& seen, std::vector<std::filesystem::path>* folders, std::vector<Dependency>* missing) {
+    for (const auto& dependency : manifest.dependencies) {
+        if (std::ranges::find(seen, dependency.id) != seen.end()) continue;
+        seen.push_back(dependency.id);
+        auto found = std::ranges::find_if(installed, [&](const InstalledEditorInfo& e) { return e.manifest.id == dependency.id; });
+        if (found == installed.end() || !versionMatches(dependency.version, found->manifest.version)) {
+            if (missing) missing->push_back(dependency);
+            continue;
+        }
+        if (folders) folders->push_back(found->directory);
+        walkDependencies(installed, found->manifest, seen, folders, missing);
+    }
+}
+
+}
+
+std::vector<Dependency> EditorStore::missingDependencies(const EditorManifest& manifest) const {
+    std::vector<Dependency> missing;
+    std::vector<std::string> seen{manifest.id};
+    walkDependencies(list(), manifest, seen, nullptr, &missing);
+    return missing;
+}
+
+std::vector<fs::path> EditorStore::dependencyFolders(const EditorManifest& manifest) const {
+    std::vector<fs::path> folders;
+    std::vector<std::string> seen{manifest.id};
+    walkDependencies(list(), manifest, seen, &folders, nullptr);
+    return folders;
+}
+
+std::vector<std::string> EditorStore::dependents(std::string_view id) const {
+    std::vector<std::string> names;
+    for (const auto& editor : list())
+        if (std::ranges::any_of(editor.manifest.dependencies, [&](const Dependency& d) { return d.id == id; }))
+            names.push_back(editor.manifest.name);
+    return names;
 }
 
 std::vector<InstalledEditor> EditorStore::installedVersions() const {

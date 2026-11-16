@@ -19,4 +19,9 @@ inline constexpr std::size_t kSmdhSize = 0x36C0;
 // the first non-empty title.
 std::optional<Smdh> parseSmdh(ByteView data, int language);
 
+// The banner of a DS or DSi title (DSiWare and DS cartridges have no SMDH): the first line of the title is
+// the name, the last line the publisher, and the 32x32 icon is returned as a TGA.
+inline constexpr std::size_t kDsBannerMinSize = 0x840;
+std::optional<Smdh> parseDsBanner(ByteView data, int language);
+
 }

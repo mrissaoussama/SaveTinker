@@ -130,13 +130,68 @@ std::expected<void, std::string> BackupManager::verify(const BackupRecord& recor
 
 std::expected<void, std::string> BackupManager::restore(const BackupRecord& record, SaveMount& mount) const {
     if (auto valid = verify(record); !valid) return valid;
+    std::vector<std::pair<std::string, fs::path>> files;
+    for (const auto& file : record.files) files.emplace_back(file.path, record.directory / kFilesDir / file.path);
+    return writeOver(files, mount);
+}
+
+std::expected<void, std::string> BackupManager::importFolder(const fs::path& folder, SaveMount& mount) const {
+    std::vector<std::pair<std::string, fs::path>> files;
+    std::error_code error;
+    if (!fs::is_directory(folder, error)) return std::unexpected("not a folder: " + folder.string());
+    // A SaveTinker, Checkpoint or JKSM backup folder holds the save files directly; ours keeps them under files/.
+    const fs::path root = fs::is_directory(folder / kFilesDir, error) && fs::exists(folder / kRecordFile, error) ? folder / kFilesDir : folder;
+    // Folders the app cannot open (a drive's System Volume Information, say) are skipped, not fatal.
+    fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, error);
+    if (error) return std::unexpected("cannot read " + root.string() + ": " + error.message());
+    for (; it != fs::recursive_directory_iterator(); it.increment(error)) {
+        if (error) return std::unexpected("cannot read " + root.string() + ": " + error.message());
+        std::error_code ignored;
+        if (it->is_regular_file(ignored)) files.emplace_back(relativePath(it->path(), root), it->path());
+    }
+    if (error) return std::unexpected("cannot read " + root.string() + ": " + error.message());
+    if (files.empty()) return std::unexpected("the folder has no files");
+    return writeOver(files, mount);
+}
+
+std::expected<BackupRecord, std::string> BackupManager::exportTo(const BackupRecord& record, const fs::path& folder) const {
     try {
-        for (const auto& existing : mount.listFiles()) {
-            const bool kept = std::ranges::any_of(record.files, [&](const BackupFile& f) { return f.path == existing.path; });
-            if (!kept) mount.remove(existing.path);
+        for (const auto& file : record.files) {
+            const fs::path target = folder / file.path;
+            fs::create_directories(target.parent_path());
+            fs::copy_file(record.directory / kFilesDir / file.path, target, fs::copy_options::overwrite_existing);
         }
-        for (const auto& file : record.files)
-            mount.write(file.path, readWholeFile(record.directory / kFilesDir / file.path));
+    } catch (const std::exception& error) {
+        return std::unexpected(std::string("export failed: ") + error.what());
+    }
+    return record;
+}
+
+std::expected<void, std::string> BackupManager::writeOver(const std::vector<std::pair<std::string, fs::path>>& files,
+                                                          SaveMount& mount) const {
+    try {
+        const auto existing = mount.listFiles();
+        if (mount.singleFile()) {
+            // A one-file save (a cartridge image, a PC save file) takes whatever the file was called elsewhere.
+            if (files.size() != 1)
+                return std::unexpected(std::format("this save is a single file, but the source holds {} files", files.size()));
+            if (existing.size() != 1) return std::unexpected(std::string("the save file is missing"));
+            const Bytes content = readWholeFile(files.front().second);
+            if (mount.read(existing.front().path) != content) mount.write(existing.front().path, content);
+            mount.commit();
+            return {};
+        }
+        // Write every file before deleting anything, so a failure part way leaves the save readable.
+        for (const auto& [path, source] : files) {
+            const Bytes content = readWholeFile(source);
+            const bool present = std::ranges::any_of(existing, [&](const SaveFileEntry& e) { return e.path == path; });
+            if (present && mount.read(path) == content) continue;
+            mount.write(path, content);
+        }
+        for (const auto& entry : existing) {
+            const bool kept = std::ranges::any_of(files, [&](const auto& file) { return file.first == entry.path; });
+            if (!kept) mount.remove(entry.path);
+        }
         mount.commit();
     } catch (const std::exception& error) {
         return std::unexpected(std::string("restore failed: ") + error.what());

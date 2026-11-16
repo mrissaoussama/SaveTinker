@@ -92,6 +92,9 @@ public:
     void choose(std::string title, std::string message, std::vector<std::pair<std::string, std::function<void(App&)>>> choices);
     void showMessage(std::string title, std::string message);
     void toast(std::string text, bool error = false);
+    // Appends a line to <data>/logs/savetinker.log, kept under 512 KB.
+    void log(const std::string& source, const std::string& text);
+    std::filesystem::path logPath() const;
 
     void refreshRepos(bool notify);
     void checkAppUpdate(bool silent);
@@ -107,6 +110,8 @@ public:
     // Games named by installed editors and by the repository catalog, for linking added saves.
     std::vector<st::GameTarget> knownGames();
     ImVec2 footerTextPosition() const { return footerLeft_; }
+    // Width left of the button hints, for status text.
+    float footerTextRoom() const { return footerRoom_; }
 
 private:
     void applyStyle();
@@ -151,6 +156,7 @@ private:
     float scale_ = 1.0f;
     float appliedScale_ = 0.0f;
     ImVec2 footerLeft_{};
+    float footerRoom_ = 0.0f;
     std::unique_ptr<st::Platform> platform_;
     std::filesystem::path settingsPath_;
     st::Settings settings_;
@@ -180,7 +186,16 @@ private:
     ImGuiKey releaseFooterKey_ = ImGuiKey_None;
 };
 
+enum class FilePick { File, Folder, Either };
+
 std::unique_ptr<Screen> makeMainScreen();
+// Lets the user walk the SD card (or the disks on PC) and pick a file or folder.
+std::unique_ptr<Screen> makeFileBrowser(std::string title, FilePick pick, std::filesystem::path start,
+                                        std::function<void(App&, const std::filesystem::path&)> onPick);
+std::filesystem::path defaultBrowseFolder();
+// The system's own dialog where there is one (PC), the file browser otherwise.
+void pickPath(App& app, std::string title, FilePick pick, std::filesystem::path start,
+              std::function<void(App&, const std::filesystem::path&)> onPick);
 std::unique_ptr<Screen> makeGameScreen(const std::string& titleId);
 std::unique_ptr<Screen> makeEditorScreen(App& app, const st::SaveInfo& save, const st::InstalledEditorInfo& editor);
 std::unique_ptr<Screen> makeHexScreen(App& app, const st::SaveInfo& save);

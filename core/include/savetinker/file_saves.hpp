@@ -22,6 +22,7 @@ std::optional<RomIdentity> readRomIdentity(const std::filesystem::path& rom);
 
 // Title id for a cartridge game: eight zeros, then the four-letter game code as hex.
 std::string cartridgeTitleId(const std::string& gameCode);
+std::optional<RomIdentity> findRomForSave(const std::filesystem::path& save);
 
 // Paths are kept as UTF-8 in settings.
 std::filesystem::path pathFromUtf8(const std::string& text);
@@ -43,6 +44,7 @@ public:
     void write(const std::string& path, ByteView data) override;
     void remove(const std::string& path) override;
     void commit() override {}
+    bool singleFile() const override { return true; }
 
     static constexpr const char* kFileName = "save.bin";
 
@@ -68,6 +70,9 @@ public:
     std::optional<std::string> runningTitleId() override { return inner_->runningTitleId(); }
     std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) override;
     std::expected<std::shared_ptr<GameData>, std::string> openGameData(const std::string& titleId) override;
+    void afterRestore(const SaveInfo& save) override {
+        if (save.kind != SaveKind::File) inner_->afterRestore(save);
+    }
 
 private:
     struct Found {

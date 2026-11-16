@@ -61,6 +61,8 @@ public:
     virtual void write(const std::string& path, ByteView data) = 0;
     virtual void remove(const std::string& path) = 0;
     virtual void commit() = 0;
+    // True when the save is one file that cannot be renamed, added to or removed from.
+    virtual bool singleFile() const { return false; }
 };
 
 class DirectorySaveMount : public SaveMount {
@@ -99,13 +101,21 @@ public:
     virtual std::optional<std::string> runningTitleId() = 0;
     virtual std::expected<std::unique_ptr<SaveMount>, std::string> mount(const SaveInfo& save) = 0;
     virtual std::expected<std::shared_ptr<GameData>, std::string> openGameData(const std::string& titleId);
+    // Called once a backup was written back over a save.
+    virtual void afterRestore(const SaveInfo&) {}
 };
 
 // Path of `path` below `root` with forward slashes. Works on device mounts like "save:/" where
 // std::filesystem::relative would need canonical paths.
 std::string relativePath(const std::filesystem::path& path, const std::filesystem::path& root);
 
-Document loadDocument(SaveMount& mount);
+using MountOpener = std::function<std::expected<std::unique_ptr<SaveMount>, std::string>()>;
+
+// Saves above this size keep their big files on disk until an editor reads them, through `reopen`.
+constexpr std::uint64_t kEagerLoadLimit = 8u << 20;
+constexpr std::uint64_t kLazyFileSize = 256u << 10;
+
+Document loadDocument(SaveMount& mount, const MountOpener& reopen = {});
 void storeDocument(const Document& document, SaveMount& mount);
 
 }
